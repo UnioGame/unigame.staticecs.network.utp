@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "REVIEW-SVE-97-UTP-R2-C1",
+  "subject": {
+    "kind": "candidate",
+    "taskId": "TASK-SVE-97-UTP-R2",
+    "baseSha": "3979580e10c05ff3f1ee68016debd0c50b046aa2",
+    "headSha": "c801ae828852e24bd80e8d486f619d41ff4de529"
+  },
+  "status": "ChangesRequested",
+  "reviewerModel": "gpt-5.6-sol:high",
+  "cycle": 1,
+  "findings": [
+    {
+      "priority": "P1",
+      "origin": "implementation",
+      "summary": "UTP default maxMessageSize 1400 leaves only 1388 bytes after connection, pipeline-id and UnreliableSequenced headers, so the advertised 1400 application-byte boundary cannot send."
+    },
+    {
+      "priority": "P1",
+      "origin": "validation",
+      "summary": "The stale-accept test flushes after client disconnect but omits the required client ScheduleUpdate, so the disconnect packet is not produced."
+    },
+    {
+      "priority": "P1",
+      "origin": "plan-contract",
+      "summary": "The package task still lacks a package-repository phase/baseline and records fallbackReason despite assigned and actual models matching."
+    }
+  ],
+  "validation": [
+    "previous implementation findings 001 through 005 are resolved",
+    "public test documentation finding is resolved",
+    "package worktree clean at c801ae82",
+    "Unity compile and test execution evidence remains absent"
+  ]
+}

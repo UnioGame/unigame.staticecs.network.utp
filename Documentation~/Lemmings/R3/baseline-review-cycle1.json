@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "REVIEW-SVE-97-UTP-DISCONNECT-R3-BASELINE-CYCLE1",
+  "subject": {
+    "kind": "baseline",
+    "phaseId": "PHASE-SVE-97-UTP-DISCONNECT-R3",
+    "sha": "1fa86ce991a25c5ed3148e9f689e0f99d3d09d0a"
+  },
+  "status": "ChangesRequested",
+  "reviewerModel": "gpt-5.6-sol:high",
+  "cycle": 1,
+  "findings": [
+    {
+      "priority": "P1",
+      "origin": "plan-contract",
+      "summary": "The non-Unity package worktree could not execute the required EditMode suite and the task omitted a validation backend or explicit integration debt."
+    }
+  ],
+  "validation": [
+    "Baseline SHA and minimal disconnect API contract are valid",
+    "Ownership, Luna Max assignment and risk-to-test mapping are otherwise accepted"
+  ]
+}

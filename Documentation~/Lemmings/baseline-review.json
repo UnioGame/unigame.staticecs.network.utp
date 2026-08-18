@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "REVIEW-SVE-97-UTP-PACKAGE-BASELINE",
+  "subject": {
+    "kind": "baseline",
+    "phaseId": "PHASE-SVE-97-UTP-PACKAGE",
+    "sha": "3979580e10c05ff3f1ee68016debd0c50b046aa2"
+  },
+  "status": "Accepted",
+  "reviewerModel": "gpt-5.6-sol:high",
+  "cycle": 1,
+  "findings": [],
+  "validation": [
+    "Package repository baseline resolves",
+    "Ownership is package-repository-relative",
+    "Core INetworkTransport contract remains outside owned paths"
+  ]
+}

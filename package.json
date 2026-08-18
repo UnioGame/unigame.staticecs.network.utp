@@ -1,0 +1,11 @@
+{
+  "name": "com.unigame.staticecs.network.utp",
+  "displayName": "UniGame Static ECS Network Unity Transport",
+  "version": "2026.8.0",
+  "unity": "6000.0",
+  "description": "Unity Transport 2.x adapter for the transport-neutral Static ECS network protocol.",
+  "dependencies": {
+    "com.unigame.staticecs.network": "2026.6.0",
+    "com.unity.transport": "2.6.0"
+  }
+}

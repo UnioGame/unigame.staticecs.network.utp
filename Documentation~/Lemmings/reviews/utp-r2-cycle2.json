@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "REVIEW-SVE-97-UTP-R2-C2",
+  "subject": {
+    "kind": "candidate",
+    "taskId": "TASK-SVE-97-UTP-R2",
+    "baseSha": "3979580e10c05ff3f1ee68016debd0c50b046aa2",
+    "headSha": "158bdc2426d3b609b520925e9a99a223a04d666b"
+  },
+  "status": "Accepted",
+  "reviewerModel": "gpt-5.6-sol:high",
+  "cycle": 2,
+  "findings": [],
+  "validation": [
+    "UTP 2.6 API and lifecycle usage are plausible",
+    "1472 network message size supports the 1400 application-byte unreliable boundary",
+    "custom unreliable settings clamp to 1400",
+    "lifecycle, lease ownership, channel mapping, capacity, stale-accept and construction findings are resolved",
+    "package-relative phase and baseline are present",
+    "git diff --check, ownership, ancestry, JSON, asmdef and meta GUID checks passed",
+    "Unity compilation and loopback execution remain deferred to TASK-SVE-97-ECS"
+  ]
+}

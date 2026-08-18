@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "taskId": "TASK-SVE-97-UTP-DISCONNECT-R3",
+  "goal": "Expose bounded per-connection remote disconnect notifications required by the ECS server lifecycle without changing the core transport contract.",
+  "acceptance": [
+    "UnityTransportServerHost.TryDequeueDisconnected(out ConnectionId) returns the exact endpoint removed by a remote UTP Disconnect event",
+    "Each observed remote disconnect is returned once in FIFO observation order",
+    "Pending disconnect storage is bounded by MaximumConnections and overflow increments existing drop diagnostics",
+    "Local endpoint disposal does not synthesize a second remote disconnect notification",
+    "Focused loopback tests cover identity, single delivery, multiple endpoints and bounded overflow behavior",
+    "Existing adapter tests and public API documentation remain valid"
+  ],
+  "dependencies": [],
+  "mode": "strict",
+  "state": "Ready",
+  "previousState": "Planned",
+  "role": "worker",
+  "risks": ["nativeLifetime", "disconnectIdentity", "boundedQueue", "consumerCompatibility"],
+  "telemetryCohort": null,
+  "ownership": {
+    "owned": ["unigame.staticecs.network.utp/**"],
+    "shared": ["UnityTransportServerHost public API"],
+    "forbidden": ["unigame.staticecs.network/**", "../Assets/**", "../Packages/**"]
+  },
+  "models": { "requested": null, "assigned": "gpt-5.6-luna:max", "actual": null },
+  "workspace": {
+    "policy": "isolated",
+    "backend": "package-worktree",
+    "path": "D:/Dev/kontora/static.ecs.template/GameClient/lemmings-worktrees-root/utp-package",
+    "estimatedGiB": 0.266,
+    "approval": "not-required",
+    "reason": "Narrow adapter fix continues in the existing clean package worktree"
+  },
+  "execution": { "handoff": null, "validationEvidence": [], "attempts": [] },
+  "baseSha": "1fa86ce991a25c5ed3148e9f689e0f99d3d09d0a",
+  "commits": { "candidate": null, "fix": [] },
+  "validation": {
+    "riskToTest": [
+      "native lifetime -> loopback remote disconnect and deterministic disposal tests",
+      "disconnect identity -> two-client exact ConnectionId assertions",
+      "bounded queue -> MaximumConnections-sized drain and overflow diagnostic assertion",
+      "consumer compatibility -> public host API compile and existing adapter suite"
+    ],
+    "commands": ["focused Unity Transport adapter EditMode tests", "git diff --check"],
+    "allowedOutputs": [],
+    "debt": [
+      {
+        "reason": "The package worktree is not a Unity consumer project and cannot resolve or execute com.unity.transport tests.",
+        "owner": "TASK-SVE-97-ECS-R2",
+        "futureGate": "After the R3 package pointer and consumer manifest are integrated, compile the adapter and run its focused EditMode loopback suite.",
+        "blocking": false
+      }
+    ]
+  },
+  "reviewRef": null,
+  "reviewHistory": [],
+  "qualitySummary": null,
+  "close": { "mergeCommit": null, "integrationValidationPassed": false }
+}

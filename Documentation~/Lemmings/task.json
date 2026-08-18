@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "taskId": "TASK-SVE-97-UTP-R2",
+  "goal": "Deliver the reviewed Unity Transport 2.6 adapter from the Game.Packages repository with bounded connections, exact channel mapping and deterministic native ownership.",
+  "acceptance": [
+    "Package com.unigame.staticecs.network.utp implements INetworkTransport without changing the core package",
+    "ReliableOrdered uses fragmentation plus reliable sequenced and is bounded to 64 KiB",
+    "UnreliableSequenced uses the unreliable sequenced pipeline and is bounded by MaximumUnreliableBytes",
+    "TrySend always consumes its lease and TryReceive transfers an exact NetworkBufferPool lease",
+    "Client connect and server listen/accept/disconnect are bounded and exception-safe",
+    "Focused tests cover both channel round trips, receive ownership, maximum connections, stale accepts, overflow and failed construction"
+  ],
+  "dependencies": [],
+  "mode": "strict",
+  "state": "Accepted",
+  "previousState": "Candidate",
+  "role": "worker",
+  "risks": [
+    "parallelWriters",
+    "sharedContracts",
+    "nativeLifetime",
+    "packageSubmodule"
+  ],
+  "telemetryCohort": null,
+  "ownership": {
+    "owned": [
+      "unigame.staticecs.network.utp/**",
+      "unigame.staticecs.network.utp.meta"
+    ],
+    "shared": [
+      "INetworkTransport frozen contract"
+    ],
+    "forbidden": [
+      "unigame.staticecs.network/**",
+      "../Assets/**",
+      "../Packages/**"
+    ]
+  },
+  "models": {
+    "requested": null,
+    "assigned": "gpt-5.6-terra:max",
+    "actual": "gpt-5.6-terra:max"
+  },
+  "workspace": {
+    "policy": "isolated",
+    "backend": "package-worktree",
+    "path": "D:/Dev/kontora/static.ecs.template/GameClient/lemmings-worktrees-root/utp-package",
+    "estimatedGiB": 0.266,
+    "approval": "not-required",
+    "reason": "Package-repository-relative remediation after the original cross-repository task contract failed strict validation"
+  },
+  "execution": {
+    "handoff": "Candidate c801ae82 plus cycle-2 head 158bdc24 deliver the reviewed adapter, full 1400-byte unreliable boundary and normalized custom cap. Consumer manifest resolution and Unity execution remain in TASK-SVE-97-ECS.",
+    "validationEvidence": [
+      "git diff --check 8456001..c801ae82 passed",
+      "package JSON and asmdef files parse",
+      "candidate paths remain inside unigame.staticecs.network.utp",
+      "candidate meta GUIDs are unique"
+    ],
+    "attempts": [
+      {
+        "attempt": 1,
+        "kind": "candidate",
+        "actualModel": "gpt-5.6-terra:max",
+        "headSha": "c801ae828852e24bd80e8d486f619d41ff4de529",
+        "validationFailures": 0,
+        "reviewRef": "unigame.staticecs.network.utp/Documentation~/Lemmings/reviews/utp-r2-cycle1.json",
+        "reviewStatus": "ChangesRequested"
+      },
+      {
+        "attempt": 2,
+        "kind": "fix",
+        "actualModel": "gpt-5.6-terra:max",
+        "headSha": "158bdc2426d3b609b520925e9a99a223a04d666b",
+        "validationFailures": 0,
+        "reviewRef": "unigame.staticecs.network.utp/Documentation~/Lemmings/reviews/utp-r2-cycle2.json",
+        "reviewStatus": "Accepted"
+      }
+    ]
+  },
+  "baseSha": "3979580e10c05ff3f1ee68016debd0c50b046aa2",
+  "commits": {
+    "candidate": "c801ae828852e24bd80e8d486f619d41ff4de529",
+    "fix": [
+      "158bdc2426d3b609b520925e9a99a223a04d666b"
+    ]
+  },
+  "validation": {
+    "riskToTest": [
+      "lease ownership -> rejected-send and loopback receive lease tests",
+      "channel mapping -> reliable and unreliable exact-boundary loopback tests",
+      "connection bounds -> maximum-connections and stale-accept tests",
+      "native lifetime -> failed-listen construction test"
+    ],
+    "commands": [
+      "focused adapter EditMode tests",
+      "git diff --check"
+    ],
+    "allowedOutputs": [],
+    "debt": [
+      {
+        "reason": "The package worktree has no resolved Unity Transport consumer cache.",
+        "owner": "TASK-SVE-97-ECS",
+        "futureGate": "Compile the adapter and run its EditMode loopback tests after manifest integration.",
+        "blocking": false
+      }
+    ]
+  },
+  "reviewRef": "unigame.staticecs.network.utp/Documentation~/Lemmings/reviews/utp-r2-cycle2.json",
+  "reviewHistory": [
+    "unigame.staticecs.network.utp/Documentation~/Lemmings/reviews/utp-r2-cycle1.json",
+    "unigame.staticecs.network.utp/Documentation~/Lemmings/reviews/utp-r2-cycle2.json"
+  ],
+  "qualitySummary": null,
+  "close": {
+    "mergeCommit": null,
+    "integrationValidationPassed": false
+  }
+}

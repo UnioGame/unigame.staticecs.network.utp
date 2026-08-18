@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "PHASE-SVE-97-UTP-DISCONNECT-R3",
+  "baselineSha": "1fa86ce991a25c5ed3148e9f689e0f99d3d09d0a",
+  "integrationBranch": "task/sve-97-utp-package",
+  "contractsFrozen": true,
+  "contracts": [
+    "Core INetworkTransport remains unchanged and Unity-free",
+    "UnityTransportServerHost exposes remote transport disconnect identities as ConnectionId values",
+    "Each raw remote disconnect is published at most once after the driver update that observes it",
+    "Disconnect buffering is bounded by MaximumConnections and normal ECS consumption drains it every transport update",
+    "Existing channel mapping, message bounds and lease ownership remain unchanged"
+  ],
+  "baselineReviewRef": "unigame.staticecs.network.utp/Documentation~/Lemmings/R3/baseline-review.json",
+  "taskDag": [
+    { "taskId": "TASK-SVE-97-UTP-DISCONNECT-R3", "dependencies": [] }
+  ],
+  "leases": [
+    { "resource": "unigame.staticecs.network.utp", "owner": "TASK-SVE-97-UTP-DISCONNECT-R3", "active": true }
+  ],
+  "close": { "mergeCommits": [], "phaseValidation": [] }
+}

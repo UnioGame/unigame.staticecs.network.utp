@@ -1,0 +1,18 @@
+{
+  "name": "unigame.staticecs.network.utp.tests",
+  "rootNamespace": "UniGame.StaticEcs.Network.UnityTransport.Tests",
+  "references": [
+    "unigame.staticecs.network.utp",
+    "unigame.staticecs.network",
+    "unigame.staticecs.network.protocol",
+    "Unity.Networking.Transport",
+    "Unity.Collections"
+  ],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "allowUnsafeCode": false,
+  "noEngineReferences": false
+}

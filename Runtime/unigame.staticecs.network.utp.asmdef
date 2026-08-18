@@ -1,0 +1,15 @@
+{
+  "name": "unigame.staticecs.network.utp",
+  "rootNamespace": "UniGame.StaticEcs.Network.UnityTransport",
+  "references": [
+    "unigame.staticecs.network",
+    "unigame.staticecs.network.protocol",
+    "Unity.Collections",
+    "Unity.Networking.Transport"
+  ],
+  "autoReferenced": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "allowUnsafeCode": false,
+  "noEngineReferences": false
+}

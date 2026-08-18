@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "phaseId": "PHASE-SVE-97-UTP-PACKAGE",
+  "baselineSha": "3979580e10c05ff3f1ee68016debd0c50b046aa2",
+  "integrationBranch": "task/sve-97-utp-package",
+  "contractsFrozen": true,
+  "contracts": [
+    "INetworkTransport remains unchanged and Unity-free",
+    "ReliableOrdered maps to fragmentation plus reliable sequenced and is bounded to 64 KiB",
+    "UnreliableSequenced maps to unreliable sequenced and is bounded to 1400 application bytes",
+    "TrySend consumes its lease and TryReceive transfers a NetworkBufferPool lease"
+  ],
+  "baselineReviewRef": "unigame.staticecs.network.utp/Documentation~/Lemmings/baseline-review.json",
+  "taskDag": [
+    { "taskId": "TASK-SVE-97-UTP-R2", "dependencies": [] }
+  ],
+  "leases": [
+    { "resource": "unigame.staticecs.network.utp", "owner": "TASK-SVE-97-UTP-R2", "active": true }
+  ],
+  "close": { "mergeCommits": [], "phaseValidation": [] }
+}
