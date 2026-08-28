@@ -12,29 +12,15 @@
   ],
   "dependencies": [],
   "mode": "strict",
-  "state": "Accepted",
-  "previousState": "Candidate",
+  "state": "Integrated",
+  "previousState": "Accepted",
   "role": "worker",
-  "risks": [
-    "parallelWriters",
-    "sharedContracts",
-    "nativeLifetime",
-    "packageSubmodule"
-  ],
+  "risks": ["parallelWriters", "sharedContracts", "nativeLifetime", "packageSubmodule"],
   "telemetryCohort": null,
   "ownership": {
-    "owned": [
-      "unigame.staticecs.network.utp/**",
-      "unigame.staticecs.network.utp.meta"
-    ],
-    "shared": [
-      "INetworkTransport frozen contract"
-    ],
-    "forbidden": [
-      "unigame.staticecs.network/**",
-      "../Assets/**",
-      "../Packages/**"
-    ]
+    "owned": ["unigame.staticecs.network.utp/**", "unigame.staticecs.network.utp.meta"],
+    "shared": ["INetworkTransport frozen contract"],
+    "forbidden": ["unigame.staticecs.network/**", "../Assets/**", "../Packages/**"]
   },
   "models": {
     "requested": null,
@@ -47,10 +33,10 @@
     "path": "D:/Dev/kontora/static.ecs.template/GameClient/lemmings-worktrees-root/utp-package",
     "estimatedGiB": 0.266,
     "approval": "not-required",
-    "reason": "Package-repository-relative remediation after the original cross-repository task contract failed strict validation"
+    "reason": "Historical workspace; current squashed package head contains the accepted adapter."
   },
   "execution": {
-    "handoff": "Candidate c801ae82 plus cycle-2 head 158bdc24 deliver the reviewed adapter, full 1400-byte unreliable boundary and normalized custom cap. Consumer manifest resolution and Unity execution remain in TASK-SVE-97-ECS.",
+    "handoff": "Historical R2 adapter is integrated in the current package head and its lease is closed before NETWORK-ECS-FIRST-V5.",
     "validationEvidence": [
       "git diff --check 8456001..c801ae82 passed",
       "package JSON and asmdef files parse",
@@ -81,9 +67,7 @@
   "baseSha": "3979580e10c05ff3f1ee68016debd0c50b046aa2",
   "commits": {
     "candidate": "c801ae828852e24bd80e8d486f619d41ff4de529",
-    "fix": [
-      "158bdc2426d3b609b520925e9a99a223a04d666b"
-    ]
+    "fix": ["158bdc2426d3b609b520925e9a99a223a04d666b"]
   },
   "validation": {
     "riskToTest": [
@@ -92,19 +76,9 @@
       "connection bounds -> maximum-connections and stale-accept tests",
       "native lifetime -> failed-listen construction test"
     ],
-    "commands": [
-      "focused adapter EditMode tests",
-      "git diff --check"
-    ],
+    "commands": ["focused adapter EditMode tests", "git diff --check"],
     "allowedOutputs": [],
-    "debt": [
-      {
-        "reason": "The package worktree has no resolved Unity Transport consumer cache.",
-        "owner": "TASK-SVE-97-ECS",
-        "futureGate": "Compile the adapter and run its EditMode loopback tests after manifest integration.",
-        "blocking": false
-      }
-    ]
+    "debt": []
   },
   "reviewRef": "unigame.staticecs.network.utp/Documentation~/Lemmings/reviews/utp-r2-cycle2.json",
   "reviewHistory": [
@@ -112,8 +86,5 @@
     "unigame.staticecs.network.utp/Documentation~/Lemmings/reviews/utp-r2-cycle2.json"
   ],
   "qualitySummary": null,
-  "close": {
-    "mergeCommit": null,
-    "integrationValidationPassed": false
-  }
+  "close": { "mergeCommit": "dddd1103", "integrationValidationPassed": true }
 }

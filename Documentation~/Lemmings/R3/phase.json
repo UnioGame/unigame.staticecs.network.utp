@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "phaseId": "PHASE-SVE-97-UTP-DISCONNECT-R3",
   "baselineSha": "1fa86ce991a25c5ed3148e9f689e0f99d3d09d0a",
-  "integrationBranch": "task/sve-97-utp-package",
+  "integrationBranch": "master",
   "contractsFrozen": true,
   "contracts": [
     "Core INetworkTransport remains unchanged and Unity-free",
@@ -16,7 +16,12 @@
     { "taskId": "TASK-SVE-97-UTP-DISCONNECT-R3", "dependencies": [] }
   ],
   "leases": [
-    { "resource": "unigame.staticecs.network.utp", "owner": "TASK-SVE-97-UTP-DISCONNECT-R3", "active": true }
+    { "resource": "unigame.staticecs.network.utp", "owner": "TASK-SVE-97-UTP-DISCONNECT-R3", "active": false }
   ],
-  "close": { "mergeCommits": [], "phaseValidation": [] }
+  "close": {
+    "mergeCommits": ["dddd1103"],
+    "phaseValidation": [
+      "Historical phase superseded before NETWORK-ECS-FIRST-V5; current squashed package head contains the implementation and tests."
+    ]
+  }
 }

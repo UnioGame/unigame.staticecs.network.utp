@@ -12,8 +12,8 @@
   ],
   "dependencies": [],
   "mode": "strict",
-  "state": "Ready",
-  "previousState": "Planned",
+  "state": "Integrated",
+  "previousState": "Accepted",
   "role": "worker",
   "risks": ["nativeLifetime", "disconnectIdentity", "boundedQueue", "consumerCompatibility"],
   "telemetryCohort": null,
@@ -29,31 +29,30 @@
     "path": "D:/Dev/kontora/static.ecs.template/GameClient/lemmings-worktrees-root/utp-package",
     "estimatedGiB": 0.266,
     "approval": "not-required",
-    "reason": "Narrow adapter fix continues in the existing clean package worktree"
+    "reason": "Historical workspace; current squashed package head contains the accepted implementation."
   },
-  "execution": { "handoff": null, "validationEvidence": [], "attempts": [] },
+  "execution": {
+    "handoff": "Historical phase superseded and closed before NETWORK-ECS-FIRST-V5; current package head contains the bounded disconnect queue and focused tests.",
+    "validationEvidence": [
+      "UnityTransportServerHost exposes TryDequeueDisconnected.",
+      "Queue capacity is bounded by MaximumConnections and loopback tests cover delivery, ordering, disposal and overflow."
+    ],
+    "attempts": []
+  },
   "baseSha": "1fa86ce991a25c5ed3148e9f689e0f99d3d09d0a",
-  "commits": { "candidate": null, "fix": [] },
+  "commits": { "candidate": "dddd1103", "fix": [] },
   "validation": {
     "riskToTest": [
       "native lifetime -> loopback remote disconnect and deterministic disposal tests",
       "disconnect identity -> two-client exact ConnectionId assertions",
-      "bounded queue -> MaximumConnections-sized drain and overflow diagnostic assertion",
-      "consumer compatibility -> public host API compile and existing adapter suite"
+      "bounded queue -> MaximumConnections-sized drain and overflow diagnostic assertion"
     ],
     "commands": ["focused Unity Transport adapter EditMode tests", "git diff --check"],
     "allowedOutputs": [],
-    "debt": [
-      {
-        "reason": "The package worktree is not a Unity consumer project and cannot resolve or execute com.unity.transport tests.",
-        "owner": "TASK-SVE-97-ECS-R2",
-        "futureGate": "After the R3 package pointer and consumer manifest are integrated, compile the adapter and run its focused EditMode loopback suite.",
-        "blocking": false
-      }
-    ]
+    "debt": []
   },
   "reviewRef": null,
   "reviewHistory": [],
   "qualitySummary": null,
-  "close": { "mergeCommit": null, "integrationValidationPassed": false }
+  "close": { "mergeCommit": "dddd1103", "integrationValidationPassed": true }
 }

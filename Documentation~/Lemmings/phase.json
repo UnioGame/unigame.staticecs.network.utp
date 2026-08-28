@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "phaseId": "PHASE-SVE-97-UTP-PACKAGE",
   "baselineSha": "3979580e10c05ff3f1ee68016debd0c50b046aa2",
-  "integrationBranch": "task/sve-97-utp-package",
+  "integrationBranch": "master",
   "contractsFrozen": true,
   "contracts": [
     "INetworkTransport remains unchanged and Unity-free",
@@ -15,7 +15,12 @@
     { "taskId": "TASK-SVE-97-UTP-R2", "dependencies": [] }
   ],
   "leases": [
-    { "resource": "unigame.staticecs.network.utp", "owner": "TASK-SVE-97-UTP-R2", "active": true }
+    { "resource": "unigame.staticecs.network.utp", "owner": "TASK-SVE-97-UTP-R2", "active": false }
   ],
-  "close": { "mergeCommits": [], "phaseValidation": [] }
+  "close": {
+    "mergeCommits": ["dddd1103"],
+    "phaseValidation": [
+      "Historical package phase accepted its repair and is superseded by the current squashed package head before NETWORK-ECS-FIRST-V5."
+    ]
+  }
 }
