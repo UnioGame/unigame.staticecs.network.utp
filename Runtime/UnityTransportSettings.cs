@@ -93,6 +93,16 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         public long SendFailures;
         /// <summary>Number of observed transport disconnects.</summary>
         public long Disconnects;
+        /// <summary>Number of reliable packets currently awaiting a later driver update.</summary>
+        public int PendingReliablePackets;
+        /// <summary>Number of reliable bytes currently awaiting a later driver update.</summary>
+        public long PendingReliableBytes;
+        /// <summary>Highest observed number of pending reliable packets.</summary>
+        public int PendingReliablePacketsHighWater;
+        /// <summary>Highest observed number of pending reliable bytes.</summary>
+        public long PendingReliableBytesHighWater;
+        /// <summary>Number of reliable packets rejected because the fixed send queue was full.</summary>
+        public long ReliableSendQueueOverflows;
         /// <summary>Number of currently queued receive packets.</summary>
         public int QueuedPackets;
         /// <summary>Number of receive leases currently owned outside the transport pool.</summary>

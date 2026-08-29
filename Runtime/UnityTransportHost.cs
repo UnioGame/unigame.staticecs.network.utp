@@ -87,6 +87,14 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         // UTP 2.6 adds a 2-byte fragmentation header and a 16-byte reliable header
         // at window 64. Keep that internal overhead outside the public 64 KiB limit.
         private const int ReliableFragmentationPipelineHeaderBytes = 18;
+        private const int ReliableControlReserve = 8;
+        private const int ReliableSnapshotBodyBytes =
+            UnityTransportSettings.MaximumReliableBytes - PacketHeader.Size -
+            SnapshotChunkHeader.Size;
+        private const int ReliableSendQueueCapacity =
+            (ProtocolLimits.MaxDecodedPayloadBytes + ReliableSnapshotBodyBytes - 1) /
+            ReliableSnapshotBodyBytes + ReliableControlReserve;
+        private const int SendQueueFull = (int)Error.StatusCode.NetworkSendQueueFull;
 
         private readonly Dictionary<NetworkConnection, UnityTransportEndpoint> _connections =
             new Dictionary<NetworkConnection, UnityTransportEndpoint>();
@@ -117,6 +125,11 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         private long _malformedPackets;
         private long _sendFailures;
         private long _disconnects;
+        private int _pendingReliablePackets;
+        private long _pendingReliableBytes;
+        private int _pendingReliablePacketsHighWater;
+        private long _pendingReliableBytesHighWater;
+        private long _reliableSendQueueOverflows;
 
         internal UnityTransportDriver(in UnityTransportSettings settings, bool listener)
         {
@@ -322,6 +335,9 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                 if (_connections.Remove(id, out var endpoint))
                     endpoint.DisposeFromDriver();
             }
+
+            foreach (var endpoint in _connections.Values)
+                DrainReliable(endpoint);
         }
 
         internal bool TrySend(UnityTransportEndpoint endpoint, NetworkBufferLease packet)
@@ -333,14 +349,12 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                 if (_disposed || !endpoint.IsConnected || packet.Length < PacketHeader.Size ||
                     !PacketHeader.TryRead(packet.Span, out var header))
                 {
-                    _dropped++;
-                    _sendFailures++;
+                    RejectSend();
                     return false;
                 }
                 if (!NetworkPacket.TryDecode(packet, out header, out _))
                 {
-                    _dropped++;
-                    _sendFailures++;
+                    RejectSend();
                     return false;
                 }
                 var reliable = header.Flags == PacketFlags.ReliableOrdered;
@@ -348,43 +362,137 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                         ? UnityTransportSettings.MaximumReliableBytes
                         : _settings.MaximumUnreliableBytes))
                 {
-                    _dropped++;
-                    _sendFailures++;
+                    RejectSend();
                     return false;
                 }
-                var pipeline = reliable ? _reliable : _unreliable;
-                if (_driver.BeginSend(pipeline, endpoint.NativeConnection, out var writer, packet.Length) != 0)
+                if (reliable && header.Kind == PacketKind.SnapshotChunk &&
+                    endpoint.PendingSnapshotChunks != 0 &&
+                    endpoint.PendingSnapshotTick != header.ServerTick)
                 {
-                    _dropped++;
-                    _sendFailures++;
+                    RejectSend();
                     return false;
                 }
-                var span = packet.Span;
-                for (var index = 0; index < span.Length; index++)
-                    writer.WriteByte(span[index]);
-                if (_driver.EndSend(writer) < 0)
+                if (reliable && endpoint.PendingReliablePackets != 0)
                 {
-                    _dropped++;
-                    _sendFailures++;
-                    return false;
+                    if (!TryEnqueueReliable(endpoint, packet, in header))
+                        return false;
+                    packet = null;
+                    return true;
                 }
-                _sent++;
-                if (reliable)
+                var result = Submit(endpoint, packet, reliable);
+                if (result >= 0)
+                    return true;
+                if (reliable && result == SendQueueFull &&
+                    TryEnqueueReliable(endpoint, packet, in header))
                 {
-                    _reliableSentPackets++;
-                    _reliableSentBytes += packet.Length;
+                    packet = null;
+                    return true;
                 }
-                else
-                {
-                    _unreliableSentPackets++;
-                    _unreliableSentBytes += packet.Length;
-                }
-                return true;
+                RejectSend();
+                return false;
             }
             finally
             {
+                packet?.Dispose();
+            }
+        }
+
+        private int Submit(UnityTransportEndpoint endpoint,
+            NetworkBufferLease packet, bool reliable)
+        {
+            var pipeline = reliable ? _reliable : _unreliable;
+            var result = _driver.BeginSend(pipeline, endpoint.NativeConnection,
+                out var writer, packet.Length);
+            if (result != 0)
+                return result;
+            var span = packet.Span;
+            for (var index = 0; index < span.Length; index++)
+                writer.WriteByte(span[index]);
+            result = _driver.EndSend(writer);
+            if (result < 0)
+                return result;
+            _sent++;
+            if (reliable)
+            {
+                _reliableSentPackets++;
+                _reliableSentBytes += packet.Length;
+            }
+            else
+            {
+                _unreliableSentPackets++;
+                _unreliableSentBytes += packet.Length;
+            }
+            return result;
+        }
+
+        private bool TryEnqueueReliable(UnityTransportEndpoint endpoint,
+            NetworkBufferLease packet, in PacketHeader header)
+        {
+            if (endpoint.PendingReliablePackets >= ReliableSendQueueCapacity)
+            {
+                _reliableSendQueueOverflows++;
+                RejectSend();
+                return false;
+            }
+            endpoint.EnqueueReliable(packet,
+                header.Kind == PacketKind.SnapshotChunk, header.ServerTick);
+            _pendingReliablePackets++;
+            _pendingReliableBytes += packet.Length;
+            if (_pendingReliablePackets > _pendingReliablePacketsHighWater)
+                _pendingReliablePacketsHighWater = _pendingReliablePackets;
+            if (_pendingReliableBytes > _pendingReliableBytesHighWater)
+                _pendingReliableBytesHighWater = _pendingReliableBytes;
+            return true;
+        }
+
+        private void DrainReliable(UnityTransportEndpoint endpoint)
+        {
+            while (endpoint.TryPeekReliable(out var packet))
+            {
+                if (!NetworkPacket.TryDecode(packet, out var header, out _))
+                {
+                    endpoint.DequeueReliable();
+                    ReleasePendingReliable(endpoint, packet, false);
+                    packet.Dispose();
+                    RejectSend();
+                    continue;
+                }
+                var result = Submit(endpoint, packet, true);
+                if (result == SendQueueFull)
+                    return;
+                endpoint.DequeueReliable();
+                ReleasePendingReliable(endpoint, packet,
+                    header.Kind == PacketKind.SnapshotChunk);
+                packet.Dispose();
+                if (result < 0)
+                    RejectSend();
+            }
+        }
+
+        internal void DisposePendingReliable(UnityTransportEndpoint endpoint)
+        {
+            while (endpoint.TryPeekReliable(out var packet))
+            {
+                PacketHeader.TryRead(packet.Span, out var header);
+                endpoint.DequeueReliable();
+                ReleasePendingReliable(endpoint, packet,
+                    header.Kind == PacketKind.SnapshotChunk);
                 packet.Dispose();
             }
+        }
+
+        private void ReleasePendingReliable(UnityTransportEndpoint endpoint,
+            NetworkBufferLease packet, bool snapshot)
+        {
+            _pendingReliablePackets--;
+            _pendingReliableBytes -= packet.Length;
+            endpoint.ReleaseReliable(snapshot);
+        }
+
+        private void RejectSend()
+        {
+            _dropped++;
+            _sendFailures++;
         }
 
         internal void Disconnect(UnityTransportEndpoint endpoint)
@@ -427,6 +535,11 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                 MalformedPackets = _malformedPackets,
                 SendFailures = _sendFailures,
                 Disconnects = _disconnects,
+                PendingReliablePackets = _pendingReliablePackets,
+                PendingReliableBytes = _pendingReliableBytes,
+                PendingReliablePacketsHighWater = _pendingReliablePacketsHighWater,
+                PendingReliableBytesHighWater = _pendingReliableBytesHighWater,
+                ReliableSendQueueOverflows = _reliableSendQueueOverflows,
                 QueuedPackets = queued,
                 OutstandingLeases = buffers.OutstandingLeases,
             };
@@ -462,7 +575,9 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         private UnityTransportEndpoint Add(NetworkConnection connection, bool accepted)
         {
             var id = checked(++_nextConnection);
-            var endpoint = new UnityTransportEndpoint(this, connection, new ConnectionId(id), _settings.ReceiveQueueCapacity);
+            var endpoint = new UnityTransportEndpoint(this, connection,
+                new ConnectionId(id), _settings.ReceiveQueueCapacity,
+                ReliableSendQueueCapacity);
             endpoint.IsConnected = accepted;
             _connections.Add(connection, endpoint);
             if (accepted)
@@ -481,15 +596,19 @@ namespace UniGame.StaticEcs.Network.UnityTransport
     {
         private readonly UnityTransportDriver _owner;
         private readonly Queue<NetworkBufferLease> _incoming;
+        private readonly Queue<NetworkBufferLease> _pendingReliable;
         private bool _disposed;
+        private int _pendingSnapshotChunks;
+        private uint _pendingSnapshotTick;
 
         internal UnityTransportEndpoint(UnityTransportDriver owner, NetworkConnection connection,
-            ConnectionId id, int queueCapacity)
+            ConnectionId id, int receiveQueueCapacity, int reliableQueueCapacity)
         {
             _owner = owner;
             NativeConnection = connection;
             Connection = id;
-            _incoming = new Queue<NetworkBufferLease>(queueCapacity);
+            _incoming = new Queue<NetworkBufferLease>(receiveQueueCapacity);
+            _pendingReliable = new Queue<NetworkBufferLease>(reliableQueueCapacity);
         }
 
         public ConnectionId Connection { get; }
@@ -497,6 +616,9 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         internal bool IsConnected { get; set; }
         internal bool IsDisposed => _disposed;
         internal int QueuedPackets => _incoming.Count;
+        internal int PendingReliablePackets => _pendingReliable.Count;
+        internal int PendingSnapshotChunks => _pendingSnapshotChunks;
+        internal uint PendingSnapshotTick => _pendingSnapshotTick;
 
         public int MaxReliablePayloadBytes => _owner.MaxReliablePayloadBytes;
         public int MaxUnreliablePayloadBytes => _owner.MaxUnreliablePayloadBytes;
@@ -530,6 +652,39 @@ namespace UniGame.StaticEcs.Network.UnityTransport
             _incoming.Enqueue(packet);
         }
 
+        internal void EnqueueReliable(NetworkBufferLease packet,
+            bool snapshot, uint snapshotTick)
+        {
+            _pendingReliable.Enqueue(packet);
+            if (!snapshot)
+                return;
+            if (_pendingSnapshotChunks == 0)
+                _pendingSnapshotTick = snapshotTick;
+            _pendingSnapshotChunks++;
+        }
+
+        internal bool TryPeekReliable(out NetworkBufferLease packet)
+        {
+            if (_pendingReliable.Count == 0)
+            {
+                packet = null;
+                return false;
+            }
+            packet = _pendingReliable.Peek();
+            return true;
+        }
+
+        internal void DequeueReliable() => _pendingReliable.Dequeue();
+
+        internal void ReleaseReliable(bool snapshot)
+        {
+            if (!snapshot)
+                return;
+            _pendingSnapshotChunks--;
+            if (_pendingSnapshotChunks == 0)
+                _pendingSnapshotTick = 0;
+        }
+
         internal void DisposeFromDriver()
         {
             if (_disposed)
@@ -538,6 +693,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
             IsConnected = false;
             while (_incoming.Count > 0)
                 _incoming.Dequeue().Dispose();
+            _owner.DisposePendingReliable(this);
         }
     }
 }

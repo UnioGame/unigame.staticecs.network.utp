@@ -74,16 +74,18 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             var bodyBytes = UnityTransportSettings.MaximumReliableBytes -
                             PacketHeader.Size - SnapshotChunkHeader.Size;
 
-            for (uint index = 0; index < 2; index++)
+            for (uint index = 0; index < 3; index++)
             {
+                var snapshotTick = index < 2 ? 1u : 2u;
+                var chunkIndex = index < 2 ? index : 0u;
                 var payload = new byte[SnapshotChunkHeader.Size + bodyBytes];
                 var chunk = new SnapshotChunkHeader
                 {
                     PayloadKind = SnapshotPayloadKind.Keyframe,
-                    SnapshotTick = 1,
+                    SnapshotTick = snapshotTick,
                     TotalLength = checked((uint)(bodyBytes * 2)),
                     TotalHash = 1,
-                    ChunkIndex = index,
+                    ChunkIndex = chunkIndex,
                     ChunkCount = 2
                 };
                 Assert.That(chunk.TryWrite(payload), Is.True);
@@ -91,16 +93,25 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
                 {
                     Kind = PacketKind.SnapshotChunk,
                     Flags = PacketFlags.ReliableOrdered,
-                    PacketSequence = index + 1,
-                    ServerTick = 1
+                    PacketSequence = chunkIndex + 1,
+                    ServerTick = snapshotTick
                 };
                 Assert.That(NetworkPacket.TryEncode(pool, header, payload,
                     out var packet), Is.True);
                 Assert.That(packet.Length,
                     Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
-                Assert.That(client.Endpoint.TrySend(packet), Is.True);
+                Assert.That(client.Endpoint.TrySend(packet), Is.EqualTo(index < 2));
+                if (index == 2)
+                    Assert.That(packet.Length, Is.Zero);
             }
 
+            var pending = client.CaptureDiagnostics();
+            Assert.That(pending.PendingReliablePackets, Is.EqualTo(1));
+            Assert.That(pending.PendingReliableBytes,
+                Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
+            Assert.That(pending.PendingReliablePacketsHighWater, Is.EqualTo(1));
+            Assert.That(pending.PendingReliableBytesHighWater,
+                Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
             client.Flush();
             for (uint index = 0; index < 2; index++)
             {
@@ -114,7 +125,18 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
                     out var chunk), Is.True);
                 Assert.That(chunk.ChunkIndex, Is.EqualTo(index));
                 Assert.That(chunk.ChunkCount, Is.EqualTo(2));
+                if (index == 0)
+                    Assert.That(client.CaptureDiagnostics().PendingReliablePackets,
+                        Is.EqualTo(1));
             }
+            Assert.That(client.CaptureDiagnostics().PendingReliablePackets,
+                Is.Zero);
+            for (var index = 0; index < 16; index++)
+            {
+                client.Update();
+                server.Update();
+            }
+            Assert.That(accepted.TryReceive(out _), Is.False);
             Assert.That(server.CaptureDiagnostics().OutstandingLeases, Is.Zero);
             Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
         }
@@ -138,6 +160,53 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(client.CaptureDiagnostics().SendFailures, Is.EqualTo(1));
         }
 
+        /// <summary>Verifies reliable backpressure is bounded and endpoint disposal releases caller leases.</summary>
+        [Test]
+        public void ReliableQueueOverflowIsBoundedAndDisposed()
+        {
+            var settings = Settings(ReservePort());
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            WaitForConnection(server, client);
+            using var pool = new NetworkBufferPool(256 * 1024);
+
+            var first = Packet(pool, PacketFlags.ReliableOrdered,
+                UnityTransportSettings.MaximumReliableBytes);
+            Assert.That(client.Endpoint.TrySend(first), Is.True);
+            var deferred = Packet(pool, PacketFlags.ReliableOrdered,
+                UnityTransportSettings.MaximumReliableBytes);
+            Assert.That(client.Endpoint.TrySend(deferred), Is.True);
+            var overflowed = false;
+            for (var index = 0; index < ProtocolLimits.MaxChunkMappings; index++)
+            {
+                var packet = Packet(pool, PacketFlags.ReliableOrdered,
+                    PacketHeader.Size);
+                if (client.Endpoint.TrySend(packet))
+                    continue;
+                Assert.That(packet.Length, Is.Zero);
+                overflowed = true;
+                break;
+            }
+
+            Assert.That(overflowed, Is.True);
+            var diagnostics = client.CaptureDiagnostics();
+            Assert.That(diagnostics.PendingReliablePackets, Is.GreaterThan(0));
+            Assert.That(diagnostics.PendingReliablePackets,
+                Is.LessThan(ProtocolLimits.MaxChunkMappings));
+            Assert.That(diagnostics.PendingReliablePacketsHighWater,
+                Is.EqualTo(diagnostics.PendingReliablePackets));
+            Assert.That(diagnostics.PendingReliableBytesHighWater,
+                Is.EqualTo(diagnostics.PendingReliableBytes));
+            Assert.That(diagnostics.ReliableSendQueueOverflows, Is.EqualTo(1));
+            Assert.That(pool.CaptureDiagnostics().OutstandingLeases,
+                Is.EqualTo(diagnostics.PendingReliablePackets));
+
+            client.Endpoint.Dispose();
+            Assert.That(client.CaptureDiagnostics().PendingReliablePackets,
+                Is.Zero);
+            Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+        }
+
         /// <summary>Verifies warm send, update and receive allocate no managed memory.</summary>
         [Test]
         public void WarmTransferAllocatesNoManagedMemory()
@@ -146,7 +215,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             using var server = new UnityTransportServerHost(settings);
             using var client = new UnityTransportClientHost(settings);
             var accepted = WaitForConnection(server, client);
-            using var pool = new NetworkBufferPool(4096);
+            using var pool = new NetworkBufferPool(512 * 1024);
 
             for (var index = 0; index < 64; index++)
                 Assert.That(TransferPacket(server, client, accepted, pool), Is.True);
@@ -158,6 +227,24 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             for (var index = 0; index < 256; index++)
                 completed &= TransferPacket(server, client, accepted, pool);
             var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.That(completed, Is.True);
+            Assert.That(allocated, Is.Zero);
+
+            var reliablePayload = new byte[
+                UnityTransportSettings.MaximumReliableBytes - PacketHeader.Size];
+            for (var index = 0; index < 16; index++)
+                Assert.That(TransferReliablePair(server, client, accepted, pool,
+                    reliablePayload), Is.True);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            before = GC.GetAllocatedBytesForCurrentThread();
+            completed = true;
+            for (var index = 0; index < 64; index++)
+                completed &= TransferReliablePair(server, client, accepted, pool,
+                    reliablePayload);
+            allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
             Assert.That(completed, Is.True);
             Assert.That(allocated, Is.Zero);
@@ -454,6 +541,39 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
                     continue;
                 received.Dispose();
                 return true;
+            }
+            return false;
+        }
+
+        private static bool TransferReliablePair(
+            UnityTransportServerHost server, UnityTransportClientHost client,
+            INetworkTransport endpoint, NetworkBufferPool pool, byte[] payload)
+        {
+            var header = new PacketHeader
+            {
+                Kind = PacketKind.Ping,
+                Flags = PacketFlags.ReliableOrdered
+            };
+            if (!NetworkPacket.TryEncode(pool, header, payload,
+                    out var first) || !client.Endpoint.TrySend(first) ||
+                !NetworkPacket.TryEncode(pool, header, payload,
+                    out var second) || !client.Endpoint.TrySend(second))
+                return false;
+            client.Flush();
+            var received = 0;
+            for (var attempt = 0; attempt < 256; attempt++)
+            {
+                client.Update();
+                server.Update();
+                while (endpoint.TryReceive(out var packet))
+                {
+                    packet.Dispose();
+                    received++;
+                }
+                if (received == 2)
+                    return true;
+                if (received > 2)
+                    return false;
             }
             return false;
         }
