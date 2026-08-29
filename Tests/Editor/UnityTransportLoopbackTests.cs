@@ -62,6 +62,50 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(client.CaptureDiagnostics().OutstandingLeases, Is.Zero);
         }
 
+        /// <summary>Verifies each channel rejects one byte above its complete packet capability.</summary>
+        [TestCase(PacketFlags.ReliableOrdered, UnityTransportSettings.MaximumReliableBytes)]
+        [TestCase(PacketFlags.UnreliableSequenced, UnityTransportLimits.MaximumUnreliableBytes)]
+        public void PacketAboveChannelLimitIsRejectedAndConsumed(PacketFlags flags,
+            int limit)
+        {
+            var settings = Settings(ReservePort());
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            WaitForConnection(server, client);
+            using var pool = new NetworkBufferPool(256 * 1024);
+            var packet = Packet(pool, flags, limit + 1);
+
+            Assert.That(client.Endpoint.TrySend(packet), Is.False);
+            Assert.That(packet.Length, Is.Zero);
+            Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+            Assert.That(client.CaptureDiagnostics().SendFailures, Is.EqualTo(1));
+        }
+
+        /// <summary>Verifies warm send, update and receive allocate no managed memory.</summary>
+        [Test]
+        public void WarmTransferAllocatesNoManagedMemory()
+        {
+            var settings = Settings(ReservePort());
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            var accepted = WaitForConnection(server, client);
+            using var pool = new NetworkBufferPool(4096);
+
+            for (var index = 0; index < 64; index++)
+                Assert.That(TransferPacket(server, client, accepted, pool), Is.True);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            var completed = true;
+            for (var index = 0; index < 256; index++)
+                completed &= TransferPacket(server, client, accepted, pool);
+            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.That(completed, Is.True);
+            Assert.That(allocated, Is.Zero);
+        }
+
         /// <summary>Verifies the server rejects connections beyond its configured bound.</summary>
         [Test]
         public void ServerEnforcesMaximumConnections()
@@ -330,6 +374,31 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
                 return endpoint.TryReceive(out received);
             }, "UTP loopback packet was not received.");
             return received;
+        }
+
+        private static bool TransferPacket(UnityTransportServerHost server,
+            UnityTransportClientHost client, INetworkTransport endpoint,
+            NetworkBufferPool pool)
+        {
+            var header = new PacketHeader
+            {
+                Kind = PacketKind.Ping,
+                Flags = PacketFlags.UnreliableSequenced,
+            };
+            if (!NetworkPacket.TryEncode(pool, header, ReadOnlySpan<byte>.Empty,
+                    out var packet) || !client.Endpoint.TrySend(packet))
+                return false;
+            client.Flush();
+            for (var attempt = 0; attempt < 32; attempt++)
+            {
+                client.Update();
+                server.Update();
+                if (!endpoint.TryReceive(out var received))
+                    continue;
+                received.Dispose();
+                return true;
+            }
+            return false;
         }
 
         private static void DisconnectClient(UnityTransportServerHost server,

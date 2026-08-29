@@ -5,7 +5,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
     /// <summary>Defines immutable packet limits supported by the Unity Transport adapter.</summary>
     public static class UnityTransportLimits
     {
-        /// <summary>Maximum application packet size supported by the unreliable UTP pipeline.</summary>
+        /// <summary>Maximum complete unreliable packet bytes, including <see cref="PacketHeader"/>.</summary>
         public const int MaximumUnreliableBytes = 1400;
     }
 
@@ -15,14 +15,14 @@ namespace UniGame.StaticEcs.Network.UnityTransport
     {
         /// <summary>Default game port.</summary>
         public const ushort DefaultPort = 7777;
-        /// <summary>Maximum reliable packet supported by the UTP fragmentation stage.</summary>
+        /// <summary>Maximum complete reliable packet bytes, including <see cref="PacketHeader"/>.</summary>
         public const int MaximumReliableBytes = 64 * 1024;
 
         /// <summary>Address used by a client or listener.</summary>
         public string Address;
         /// <summary>UDP port.</summary>
         public ushort Port;
-        /// <summary>Maximum packet sent through the unreliable pipeline.</summary>
+        /// <summary>Maximum complete unreliable packet bytes, including <see cref="PacketHeader"/>.</summary>
         public int MaximumUnreliableBytes;
         /// <summary>Maximum queued received packets per connection.</summary>
         public int ReceiveQueueCapacity;

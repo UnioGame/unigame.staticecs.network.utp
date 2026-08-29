@@ -95,6 +95,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         private readonly Queue<ConnectionId> _disconnected;
         private readonly NetworkBufferPool _pool;
         private readonly UnityTransportSettings _settings;
+        private readonly NetworkConnection[] _removedConnections;
         private NetworkDriver _driver;
         private NetworkPipeline _reliable;
         private NetworkPipeline _unreliable;
@@ -121,6 +122,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         {
             _settings = settings;
             _listener = listener;
+            _removedConnections = new NetworkConnection[_settings.MaximumConnections];
             _disconnected = new Queue<ConnectionId>(_settings.MaximumConnections);
             _pool = new NetworkBufferPool(listener
                 ? NetworkBufferPool.DefaultServerRetainedBytes
@@ -225,7 +227,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                 }
             }
 
-            var removed = new List<NetworkConnection>();
+            var removedCount = 0;
             foreach (var pair in _connections)
             {
                 var endpoint = pair.Value;
@@ -247,12 +249,30 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                             _disconnected.Enqueue(endpoint.Connection);
                         else
                             _dropped++;
-                        removed.Add(pair.Key);
+                        _removedConnections[removedCount++] = pair.Key;
                         break;
                     }
                     if (type != NetworkEvent.Type.Data)
                         continue;
-                    if (reader.Length <= 0 || reader.Length > UnityTransportSettings.MaximumReliableBytes)
+                    bool reliable;
+                    int limit;
+                    if (pipeline.Equals(_reliable))
+                    {
+                        reliable = true;
+                        limit = UnityTransportSettings.MaximumReliableBytes;
+                    }
+                    else if (pipeline.Equals(_unreliable))
+                    {
+                        reliable = false;
+                        limit = _settings.MaximumUnreliableBytes;
+                    }
+                    else
+                    {
+                        _dropped++;
+                        _malformedPackets++;
+                        continue;
+                    }
+                    if (reader.Length < PacketHeader.Size || reader.Length > limit)
                     {
                         _dropped++;
                         _malformedPackets++;
@@ -264,10 +284,8 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                         _receiveQueueOverflows++;
                         continue;
                     }
-                    var bytes = new byte[reader.Length];
-                    for (var index = 0; index < bytes.Length; index++)
-                        bytes[index] = reader.ReadByte();
-                    var packet = _pool.Copy(bytes);
+                    var packet = _pool.Rent(reader.Length);
+                    reader.ReadBytes(packet.WritableSpan);
                     if (!NetworkPacket.TryDecode(packet, out var header, out _))
                     {
                         packet.Dispose();
@@ -275,12 +293,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                         _malformedPackets++;
                         continue;
                     }
-                    var reliable = header.Flags == PacketFlags.ReliableOrdered;
-                    var expectedPipeline = reliable ? _reliable : _unreliable;
-                    var limit = reliable
-                        ? UnityTransportSettings.MaximumReliableBytes
-                        : _settings.MaximumUnreliableBytes;
-                    if (!pipeline.Equals(expectedPipeline) || packet.Length > limit)
+                    if ((header.Flags == PacketFlags.ReliableOrdered) != reliable)
                     {
                         packet.Dispose();
                         _dropped++;
@@ -302,9 +315,10 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                 }
             }
 
-            for (var index = 0; index < removed.Count; index++)
+            for (var index = 0; index < removedCount; index++)
             {
-                var id = removed[index];
+                var id = _removedConnections[index];
+                _removedConnections[index] = default;
                 if (_connections.Remove(id, out var endpoint))
                     endpoint.DisposeFromDriver();
             }
@@ -439,6 +453,12 @@ namespace UniGame.StaticEcs.Network.UnityTransport
             }
         }
 
+        internal int MaxReliablePayloadBytes =>
+            UnityTransportSettings.MaximumReliableBytes;
+
+        internal int MaxUnreliablePayloadBytes =>
+            _settings.MaximumUnreliableBytes;
+
         private UnityTransportEndpoint Add(NetworkConnection connection, bool accepted)
         {
             var id = checked(++_nextConnection);
@@ -478,6 +498,8 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         internal bool IsDisposed => _disposed;
         internal int QueuedPackets => _incoming.Count;
 
+        public int MaxReliablePayloadBytes => _owner.MaxReliablePayloadBytes;
+        public int MaxUnreliablePayloadBytes => _owner.MaxUnreliablePayloadBytes;
         public bool TrySend(NetworkBufferLease packet) => _owner.TrySend(this, packet);
 
         public bool TryReceive(out NetworkBufferLease packet)

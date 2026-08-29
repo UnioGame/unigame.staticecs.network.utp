@@ -29,6 +29,17 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
                 value.Normalize(false).MaximumUnreliableBytes);
         }
 
+        /// <summary>Verifies the smallest complete unreliable packet remains an explicit capability.</summary>
+        [Test]
+        public void NormalizePreservesMinimumCompleteUnreliablePacket()
+        {
+            var value = UnityTransportSettings.Default;
+            value.MaximumUnreliableBytes = PacketHeader.Size + 1;
+
+            Assert.AreEqual(PacketHeader.Size + 1,
+                value.Normalize(false).MaximumUnreliableBytes);
+        }
+
         /// <summary>Verifies rejected sends still consume the caller-owned lease.</summary>
         [Test]
         public void RejectedPacketLeaseIsConsumed()
@@ -36,6 +47,10 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             using var pool = new NetworkBufferPool(1024);
             using var host = new UnityTransportClientHost(UnityTransportSettings.Default);
             var packet = pool.Copy(new byte[1]);
+            Assert.AreEqual(UnityTransportSettings.MaximumReliableBytes,
+                host.Endpoint.MaxReliablePayloadBytes);
+            Assert.AreEqual(UnityTransportSettings.Default.MaximumUnreliableBytes,
+                host.Endpoint.MaxUnreliablePayloadBytes);
 
             Assert.IsFalse(host.Endpoint.TrySend(packet));
             Assert.AreEqual(0, packet.Length);
