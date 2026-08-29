@@ -94,7 +94,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         private const int ReliableSendQueueCapacity =
             (ProtocolLimits.MaxDecodedPayloadBytes + ReliableSnapshotBodyBytes - 1) /
             ReliableSnapshotBodyBytes + ReliableControlReserve;
-        private const int SendQueueFull = (int)Error.StatusCode.NetworkSendQueueFull;
+        private const int SendQueueFull = (int)Unity.Networking.Transport.Error.StatusCode.NetworkSendQueueFull;
 
         private readonly Dictionary<NetworkConnection, UnityTransportEndpoint> _connections =
             new Dictionary<NetworkConnection, UnityTransportEndpoint>();
