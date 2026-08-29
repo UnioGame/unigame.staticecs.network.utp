@@ -198,6 +198,8 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(diagnostics.PendingReliableBytesHighWater,
                 Is.EqualTo(diagnostics.PendingReliableBytes));
             Assert.That(diagnostics.ReliableSendQueueOverflows, Is.EqualTo(1));
+            Assert.That(diagnostics.DroppedPackets, Is.EqualTo(1));
+            Assert.That(diagnostics.SendFailures, Is.EqualTo(1));
             Assert.That(pool.CaptureDiagnostics().OutstandingLeases,
                 Is.EqualTo(diagnostics.PendingReliablePackets));
 

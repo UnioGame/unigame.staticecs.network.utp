@@ -382,9 +382,10 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                 var result = Submit(endpoint, packet, reliable);
                 if (result >= 0)
                     return true;
-                if (reliable && result == SendQueueFull &&
-                    TryEnqueueReliable(endpoint, packet, in header))
+                if (reliable && result == SendQueueFull)
                 {
+                    if (!TryEnqueueReliable(endpoint, packet, in header))
+                        return false;
                     packet = null;
                     return true;
                 }
