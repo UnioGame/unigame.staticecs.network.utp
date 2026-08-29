@@ -1,18 +1,34 @@
 # Static ECS Network Unity Transport
 
+Unity Transport adapter for the complete-packet `INetworkTransport` contract.
+
 ## Capabilities
 
-- Adapts Unity Transport 2.6 to the exact-packet `INetworkTransport` contract.
-- Keeps client/server driver ownership outside the transport-neutral protocol package.
-- Maps reliable packets to fragmentation plus reliable-sequenced delivery and commands to unreliable-sequenced delivery.
-- Copies received native data into bounded `NetworkBufferPool` leases.
+- Exposes reliable and unreliable complete-packet capabilities, including `PacketHeader`.
+- Copies each received native packet directly once into a pooled lease.
+- Uses bounded receive queues and a fixed-capacity reliable FIFO of existing leases under UTP backpressure.
+- Retries reliable packets in FIFO order only after a later driver update processes ACKs.
+- Reports channel traffic, failures, queue depth/high-water, overflow, disconnect, and lease diagnostics.
 
 ## Usage
 
-Create one `UnityTransportClientHost` or `UnityTransportServerHost`, call `Update` before the protocol receive systems and `Flush` after protocol send systems, and dispose the host at shutdown. Server endpoints returned by `TryAccept` are passed to `NetworkServer.AddConnection`; after each update, drain `TryDequeueDisconnected` and remove the matching server connections.
+```csharp
+var settings = UnityTransportSettings.Default;
+using var client = new UnityTransportClientHost(settings);
+client.Update();
+client.Flush();
+```
+
+Call `Update` before protocol receive and `Flush` after protocol send. Server endpoints
+from `UnityTransportServerHost.TryAccept` are passed to the transport-neutral server;
+drain disconnect notifications after each update.
 
 ## Configuration
 
-`UnityTransportSettings.Default` uses port 7777, a 1400-byte unreliable packet limit, a 64 KiB reliable limit, and bounded receive queues. Remote disconnect notifications are FIFO and buffered up to `MaximumConnections`; if the caller does not drain them, the newest overflow is dropped and counted in `DroppedPackets`. Application-level chunking above 64 KiB is intentionally not provided.
-
-`UnityTransportDiagnostics` keeps cumulative reliable/unreliable packet and byte counters, receive queue overflows, malformed packet rejections, send failures, drops, disconnects, queued packets, and outstanding receive leases. Queue, malformed, and send-failure counters are additive diagnostics; `DroppedPackets` remains the aggregate rejection/drop counter.
+- Default port: `7777`.
+- Maximum unreliable complete packet: `1400` bytes.
+- Maximum reliable complete packet: `64 KiB`.
+- Snapshot body capacity is `MaxReliablePayloadBytes - 113` bytes.
+- Queue capacities are bounded; snapshot chunking derives from protocol and transport limits and has no config knob.
+- A pending snapshot tick blocks enqueue of a different snapshot tick until the prior reliable FIFO drains.
+- See [runtime config schema v2](../../../docs/guides/network-client-server-runtime-config.md) for separated roles.
