@@ -62,6 +62,63 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(client.CaptureDiagnostics().OutstandingLeases, Is.Zero);
         }
 
+        /// <summary>Verifies a multi-chunk snapshot at the exact reliable packet boundary.</summary>
+        [Test]
+        public void SnapshotChunksAtReliableBoundaryCrossLoopback()
+        {
+            var settings = Settings(ReservePort());
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            var accepted = WaitForConnection(server, client);
+            using var pool = new NetworkBufferPool(256 * 1024);
+            var bodyBytes = UnityTransportSettings.MaximumReliableBytes -
+                            PacketHeader.Size - SnapshotChunkHeader.Size;
+
+            for (uint index = 0; index < 2; index++)
+            {
+                var payload = new byte[SnapshotChunkHeader.Size + bodyBytes];
+                var chunk = new SnapshotChunkHeader
+                {
+                    PayloadKind = SnapshotPayloadKind.Keyframe,
+                    SnapshotTick = 1,
+                    TotalLength = checked((uint)(bodyBytes * 2)),
+                    TotalHash = 1,
+                    ChunkIndex = index,
+                    ChunkCount = 2
+                };
+                Assert.That(chunk.TryWrite(payload), Is.True);
+                var header = new PacketHeader
+                {
+                    Kind = PacketKind.SnapshotChunk,
+                    Flags = PacketFlags.ReliableOrdered,
+                    PacketSequence = index + 1,
+                    ServerTick = 1
+                };
+                Assert.That(NetworkPacket.TryEncode(pool, header, payload,
+                    out var packet), Is.True);
+                Assert.That(packet.Length,
+                    Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
+                Assert.That(client.Endpoint.TrySend(packet), Is.True);
+            }
+
+            client.Flush();
+            for (uint index = 0; index < 2; index++)
+            {
+                using var received = WaitForPacket(server, client, accepted);
+                Assert.That(received.Length,
+                    Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
+                Assert.That(NetworkPacket.TryDecode(received, out var header,
+                    out var payload), Is.True);
+                Assert.That(header.Kind, Is.EqualTo(PacketKind.SnapshotChunk));
+                Assert.That(SnapshotChunkHeader.TryRead(payload.Span,
+                    out var chunk), Is.True);
+                Assert.That(chunk.ChunkIndex, Is.EqualTo(index));
+                Assert.That(chunk.ChunkCount, Is.EqualTo(2));
+            }
+            Assert.That(server.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+            Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+        }
+
         /// <summary>Verifies each channel rejects one byte above its complete packet capability.</summary>
         [TestCase(PacketFlags.ReliableOrdered, UnityTransportSettings.MaximumReliableBytes)]
         [TestCase(PacketFlags.UnreliableSequenced, UnityTransportLimits.MaximumUnreliableBytes)]
