@@ -73,6 +73,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             using var pool = new NetworkBufferPool(256 * 1024);
             var bodyBytes = UnityTransportSettings.MaximumReliableBytes -
                             PacketHeader.Size - SnapshotChunkHeader.Size;
+            var beforeSupersede = default(UnityTransportDiagnostics);
 
             for (uint index = 0; index < 3; index++)
             {
@@ -100,9 +101,21 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
                     out var packet), Is.True);
                 Assert.That(packet.Length,
                     Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
-                Assert.That(client.Endpoint.TrySend(packet), Is.EqualTo(index < 2));
                 if (index == 2)
+                    beforeSupersede = client.CaptureDiagnostics();
+                Assert.That(client.Endpoint.TrySend(packet), Is.True);
+                if (index == 2)
+                {
                     Assert.That(packet.Length, Is.Zero);
+                    var afterSupersede = client.CaptureDiagnostics();
+                    Assert.That(afterSupersede.DroppedPackets,
+                        Is.EqualTo(beforeSupersede.DroppedPackets + 1));
+                    Assert.That(afterSupersede.SendFailures,
+                        Is.EqualTo(beforeSupersede.SendFailures));
+                    Assert.That(afterSupersede.SendFailures, Is.Zero);
+                    Assert.That(afterSupersede.ReliableSendQueueOverflows,
+                        Is.EqualTo(beforeSupersede.ReliableSendQueueOverflows));
+                }
             }
 
             var pending = client.CaptureDiagnostics();
@@ -206,6 +219,29 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(superseded.ReliableSendQueueOverflows, Is.Zero);
             Assert.That(superseded.PendingReliablePackets, Is.EqualTo(1));
 
+            chunk.SnapshotTick = 0;
+            Assert.That(chunk.TryWrite(payload), Is.True);
+            var olderHeader = new PacketHeader
+            {
+                Kind = PacketKind.SnapshotChunk,
+                Flags = PacketFlags.ReliableOrdered,
+                PacketSequence = 3,
+                ServerTick = 0
+            };
+            Assert.That(NetworkPacket.TryEncode(pool, olderHeader, payload,
+                out var olderSnapshot), Is.True);
+            var beforeOlder = server.CaptureDiagnostics();
+            Assert.That(accepted.TrySend(olderSnapshot), Is.False);
+            Assert.That(olderSnapshot.Length, Is.Zero);
+            var afterOlder = server.CaptureDiagnostics();
+            Assert.That(afterOlder.DroppedPackets,
+                Is.EqualTo(beforeOlder.DroppedPackets));
+            Assert.That(afterOlder.SendFailures,
+                Is.EqualTo(beforeOlder.SendFailures + 1));
+            Assert.That(afterOlder.PendingReliablePackets, Is.EqualTo(1));
+            Assert.That(afterOlder.ReliableSendQueueOverflows,
+                Is.EqualTo(beforeOlder.ReliableSendQueueOverflows));
+
             server.Flush();
             var received = 0;
             WaitUntil(() =>
@@ -260,8 +296,9 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
 
             var completed = server.CaptureDiagnostics();
             Assert.That(completed.DroppedPackets,
-                Is.EqualTo(superseded.DroppedPackets));
-            Assert.That(completed.SendFailures, Is.Zero);
+                Is.EqualTo(afterOlder.DroppedPackets));
+            Assert.That(completed.SendFailures,
+                Is.EqualTo(afterOlder.SendFailures));
             Assert.That(completed.ReliableSendQueueOverflows, Is.Zero);
             Assert.That(completed.PendingReliablePackets, Is.Zero);
             Assert.That(completed.OutstandingLeases, Is.Zero);

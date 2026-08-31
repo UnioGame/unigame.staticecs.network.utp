@@ -378,11 +378,18 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                     return false;
                 }
                 if (reliable && header.Kind == PacketKind.SnapshotChunk &&
-                    endpoint.PendingSnapshotChunks != 0 &&
-                    endpoint.PendingSnapshotTick != header.ServerTick)
+                    endpoint.PendingSnapshotChunks != 0)
                 {
-                    _dropped++;
-                    return true;
+                    if (header.ServerTick > endpoint.PendingSnapshotTick)
+                    {
+                        _dropped++;
+                        return true;
+                    }
+                    if (header.ServerTick < endpoint.PendingSnapshotTick)
+                    {
+                        RejectSend();
+                        return false;
+                    }
                 }
                 if (reliable && endpoint.PendingReliablePackets != 0)
                 {
