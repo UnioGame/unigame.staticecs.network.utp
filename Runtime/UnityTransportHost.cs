@@ -381,8 +381,8 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                     endpoint.PendingSnapshotChunks != 0 &&
                     endpoint.PendingSnapshotTick != header.ServerTick)
                 {
-                    RejectSend();
-                    return false;
+                    _dropped++;
+                    return true;
                 }
                 if (reliable && endpoint.PendingReliablePackets != 0)
                 {

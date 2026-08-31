@@ -141,6 +141,134 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
         }
 
+        /// <summary>Verifies a newer snapshot supersedes an older queued snapshot without send failure.</summary>
+        [Test]
+        public void NewerSnapshotSupersedesQueuedOlderSnapshot()
+        {
+            const int reliableWindow = 64;
+            var settings = Settings(ReservePort());
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            var accepted = WaitForConnection(server, client);
+            using var pool = new NetworkBufferPool(256 * 1024);
+
+            for (var index = 0; index < reliableWindow; index++)
+                Assert.That(accepted.TrySend(Packet(pool,
+                    PacketFlags.ReliableOrdered, PacketHeader.Size)), Is.True);
+
+            var payload = new byte[SnapshotChunkHeader.Size + 1];
+            var chunk = new SnapshotChunkHeader
+            {
+                PayloadKind = SnapshotPayloadKind.Keyframe,
+                SnapshotTick = 1,
+                TotalLength = 1,
+                TotalHash = 1,
+                ChunkIndex = 0,
+                ChunkCount = 1
+            };
+            Assert.That(chunk.TryWrite(payload), Is.True);
+            var oldHeader = new PacketHeader
+            {
+                Kind = PacketKind.SnapshotChunk,
+                Flags = PacketFlags.ReliableOrdered,
+                PacketSequence = 1,
+                ServerTick = 1
+            };
+            Assert.That(NetworkPacket.TryEncode(pool, oldHeader, payload,
+                out var oldSnapshot), Is.True);
+            Assert.That(accepted.TrySend(oldSnapshot), Is.True);
+            Assert.That(oldSnapshot.Length, Is.Zero);
+
+            var pending = server.CaptureDiagnostics();
+            Assert.That(pending.PendingReliablePackets, Is.EqualTo(1));
+            Assert.That(pending.PendingReliablePacketsHighWater, Is.EqualTo(1));
+            Assert.That(pending.SendFailures, Is.Zero);
+            Assert.That(pending.ReliableSendQueueOverflows, Is.Zero);
+
+            chunk.SnapshotTick = 2;
+            Assert.That(chunk.TryWrite(payload), Is.True);
+            var newerHeader = new PacketHeader
+            {
+                Kind = PacketKind.SnapshotChunk,
+                Flags = PacketFlags.ReliableOrdered,
+                PacketSequence = 2,
+                ServerTick = 2
+            };
+            Assert.That(NetworkPacket.TryEncode(pool, newerHeader, payload,
+                out var newerSnapshot), Is.True);
+            Assert.That(accepted.TrySend(newerSnapshot), Is.True);
+            Assert.That(newerSnapshot.Length, Is.Zero);
+
+            var superseded = server.CaptureDiagnostics();
+            Assert.That(superseded.DroppedPackets,
+                Is.EqualTo(pending.DroppedPackets + 1));
+            Assert.That(superseded.SendFailures, Is.Zero);
+            Assert.That(superseded.ReliableSendQueueOverflows, Is.Zero);
+            Assert.That(superseded.PendingReliablePackets, Is.EqualTo(1));
+
+            server.Flush();
+            var received = 0;
+            WaitUntil(() =>
+            {
+                client.Update();
+                while (client.Endpoint.TryReceive(out var packet))
+                {
+                    packet.Dispose();
+                    received++;
+                }
+                client.Flush();
+                server.Update();
+                server.Flush();
+                return received == reliableWindow + 1 &&
+                    server.CaptureDiagnostics().PendingReliablePackets == 0;
+            }, "Queued snapshot did not drain after client acknowledgement.");
+
+            var drained = server.CaptureDiagnostics();
+            Assert.That(drained.ReliableSentPackets,
+                Is.EqualTo(reliableWindow + 1));
+            Assert.That(drained.SendFailures, Is.Zero);
+            Assert.That(drained.ReliableSendQueueOverflows, Is.Zero);
+
+            chunk.SnapshotTick = 3;
+            Assert.That(chunk.TryWrite(payload), Is.True);
+            var laterHeader = new PacketHeader
+            {
+                Kind = PacketKind.SnapshotChunk,
+                Flags = PacketFlags.ReliableOrdered,
+                PacketSequence = 3,
+                ServerTick = 3
+            };
+            Assert.That(NetworkPacket.TryEncode(pool, laterHeader, payload,
+                out var laterSnapshot), Is.True);
+            Assert.That(accepted.TrySend(laterSnapshot), Is.True);
+            Assert.That(laterSnapshot.Length, Is.Zero);
+            server.Flush();
+
+            var laterReceived = 0;
+            WaitUntil(() =>
+            {
+                client.Update();
+                while (client.Endpoint.TryReceive(out var packet))
+                {
+                    packet.Dispose();
+                    laterReceived++;
+                }
+                client.Flush();
+                server.Update();
+                return laterReceived == 1;
+            }, "Later snapshot was not sent after the old snapshot drained.");
+
+            var completed = server.CaptureDiagnostics();
+            Assert.That(completed.DroppedPackets,
+                Is.EqualTo(superseded.DroppedPackets));
+            Assert.That(completed.SendFailures, Is.Zero);
+            Assert.That(completed.ReliableSendQueueOverflows, Is.Zero);
+            Assert.That(completed.PendingReliablePackets, Is.Zero);
+            Assert.That(completed.OutstandingLeases, Is.Zero);
+            Assert.That(client.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+            Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+        }
+
         /// <summary>Verifies each channel rejects one byte above its complete packet capability.</summary>
         [TestCase(PacketFlags.ReliableOrdered, UnityTransportSettings.MaximumReliableBytes)]
         [TestCase(PacketFlags.UnreliableSequenced, UnityTransportLimits.MaximumUnreliableBytes)]
