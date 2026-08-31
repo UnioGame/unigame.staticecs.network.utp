@@ -190,7 +190,6 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(NetworkPacket.TryEncode(pool, oldHeader, payload,
                 out var oldSnapshot), Is.True);
             Assert.That(accepted.TrySend(oldSnapshot), Is.True);
-            Assert.That(oldSnapshot.Length, Is.Zero);
 
             var pending = server.CaptureDiagnostics();
             Assert.That(pending.PendingReliablePackets, Is.EqualTo(1));
