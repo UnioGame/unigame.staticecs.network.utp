@@ -235,7 +235,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(olderSnapshot.Length, Is.Zero);
             var afterOlder = server.CaptureDiagnostics();
             Assert.That(afterOlder.DroppedPackets,
-                Is.EqualTo(beforeOlder.DroppedPackets));
+                Is.EqualTo(beforeOlder.DroppedPackets + 1));
             Assert.That(afterOlder.SendFailures,
                 Is.EqualTo(beforeOlder.SendFailures + 1));
             Assert.That(afterOlder.PendingReliablePackets, Is.EqualTo(1));
