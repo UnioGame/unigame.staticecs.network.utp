@@ -209,6 +209,93 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
         }
 
+        /// <summary>Verifies one reliable window per client fits the server native send queue.</summary>
+        [Test]
+        public void ServerReliableFanoutFitsNativeSendQueue()
+        {
+            const int clientCount = 64;
+            const int reliableWindow = 64;
+            var settings = Settings(ReservePort());
+            settings.MaximumConnections = clientCount;
+            using var server = new UnityTransportServerHost(settings);
+            var clients = new UnityTransportClientHost[clientCount];
+            var accepted = new INetworkTransport[clientCount];
+            var received = new int[clientCount];
+            var acceptedCount = 0;
+            using var pool = new NetworkBufferPool(256 * 1024);
+
+            try
+            {
+                for (var index = 0; index < clientCount; index++)
+                    clients[index] = new UnityTransportClientHost(settings);
+
+                WaitUntil(() =>
+                {
+                    for (var index = 0; index < clientCount; index++)
+                        clients[index].Update();
+                    server.Update();
+                    while (server.TryAccept(out var endpoint))
+                        accepted[acceptedCount++] = endpoint;
+                    if (acceptedCount != clientCount)
+                        return false;
+                    for (var index = 0; index < clientCount; index++)
+                        if (!clients[index].Connected)
+                            return false;
+                    return true;
+                }, "UTP reliable fanout clients were not connected.");
+
+                for (var clientIndex = 0; clientIndex < clientCount; clientIndex++)
+                {
+                    for (var packetIndex = 0; packetIndex < reliableWindow; packetIndex++)
+                    {
+                        var header = new PacketHeader
+                        {
+                            Kind = PacketKind.Ping,
+                            Flags = PacketFlags.ReliableOrdered,
+                        };
+                        Assert.That(NetworkPacket.TryEncode(pool, header,
+                            ReadOnlySpan<byte>.Empty, out var packet), Is.True);
+                        Assert.That(accepted[clientIndex].TrySend(packet), Is.True);
+                    }
+                }
+
+                server.Flush();
+                WaitUntil(() =>
+                {
+                    for (var index = 0; index < clientCount; index++)
+                    {
+                        clients[index].Update();
+                        while (clients[index].Endpoint.TryReceive(out var packet))
+                        {
+                            packet.Dispose();
+                            received[index]++;
+                        }
+                    }
+                    server.Update();
+                    for (var index = 0; index < clientCount; index++)
+                        if (received[index] != reliableWindow)
+                            return false;
+                    return true;
+                }, "UTP reliable fanout packets were not received.");
+
+                var diagnostics = server.CaptureDiagnostics();
+                Assert.That(diagnostics.SendFailures, Is.Zero);
+                Assert.That(diagnostics.ReliableSentPackets,
+                    Is.EqualTo(clientCount * reliableWindow));
+                Assert.That(diagnostics.PendingReliablePackets, Is.Zero);
+                Assert.That(diagnostics.OutstandingLeases, Is.Zero);
+                Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+                for (var index = 0; index < clientCount; index++)
+                    Assert.That(clients[index].CaptureDiagnostics().OutstandingLeases,
+                        Is.Zero);
+            }
+            finally
+            {
+                for (var index = 0; index < clientCount; index++)
+                    clients[index]?.Dispose();
+            }
+        }
+
         /// <summary>Verifies warm send, update and receive allocate no managed memory.</summary>
         [Test]
         public void WarmTransferAllocatesNoManagedMemory()

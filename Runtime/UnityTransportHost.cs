@@ -84,6 +84,8 @@ namespace UniGame.StaticEcs.Network.UnityTransport
     {
         private const int NetworkMessageSize = 1472;
         private const int ReliableWindowSize = 64;
+        // 128 default connections multiplied by one reliable window per connection.
+        private const int ServerSendQueueCapacity = 8192;
         // UTP 2.6 adds a 2-byte fragmentation header and a 16-byte reliable header
         // at window 64. Keep that internal overhead outside the public 64 KiB limit.
         private const int ReliableFragmentationPipelineHeaderBytes = 18;
@@ -143,7 +145,17 @@ namespace UniGame.StaticEcs.Network.UnityTransport
             var networkSettings = new NetworkSettings();
             try
             {
-                networkSettings.WithNetworkConfigParameters(maxMessageSize: NetworkMessageSize);
+                if (_listener)
+                {
+                    networkSettings.WithNetworkConfigParameters(
+                        maxMessageSize: NetworkMessageSize,
+                        sendQueueCapacity: ServerSendQueueCapacity);
+                }
+                else
+                {
+                    networkSettings.WithNetworkConfigParameters(
+                        maxMessageSize: NetworkMessageSize);
+                }
                 networkSettings.WithReliableStageParameters(windowSize: ReliableWindowSize);
                 networkSettings.WithFragmentationStageParameters(
                     payloadCapacity: UnityTransportSettings.MaximumReliableBytes +
