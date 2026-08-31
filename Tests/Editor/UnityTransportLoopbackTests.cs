@@ -259,6 +259,11 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
                     }
                 }
 
+                var submitted = server.CaptureDiagnostics();
+                Assert.That(submitted.ReliableSentPackets,
+                    Is.EqualTo(clientCount * reliableWindow));
+                Assert.That(submitted.PendingReliablePackets, Is.Zero);
+                Assert.That(submitted.PendingReliablePacketsHighWater, Is.Zero);
                 server.Flush();
                 WaitUntil(() =>
                 {
