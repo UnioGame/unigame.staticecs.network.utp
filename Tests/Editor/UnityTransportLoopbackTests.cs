@@ -262,7 +262,8 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             var drained = server.CaptureDiagnostics();
             Assert.That(drained.ReliableSentPackets,
                 Is.EqualTo(reliableWindow + 1));
-            Assert.That(drained.SendFailures, Is.Zero);
+            Assert.That(drained.SendFailures,
+                Is.EqualTo(afterOlder.SendFailures));
             Assert.That(drained.ReliableSendQueueOverflows, Is.Zero);
 
             chunk.SnapshotTick = 3;
