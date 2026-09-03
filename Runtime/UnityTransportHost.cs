@@ -10,7 +10,6 @@ namespace UniGame.StaticEcs.Network.UnityTransport
     {
         private readonly UnityTransportDriver _driver;
 
-        /// <summary>Creates and starts a connection to the configured endpoint.</summary>
         public UnityTransportClientHost(UnityTransportSettings settings)
         {
             var normalized = settings.Normalize(false);
@@ -36,9 +35,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         public void Update() => _driver.Update();
         /// <summary>Completes pending send jobs.</summary>
         public void Flush() => _driver.Flush();
-        /// <summary>Captures current counters.</summary>
         public UnityTransportDiagnostics CaptureDiagnostics() => _driver.CaptureDiagnostics();
-        /// <inheritdoc />
         public void Dispose() => _driver.Dispose();
     }
 
@@ -47,7 +44,6 @@ namespace UniGame.StaticEcs.Network.UnityTransport
     {
         private readonly UnityTransportDriver _driver;
 
-        /// <summary>Creates and starts a listener at the configured endpoint.</summary>
         public UnityTransportServerHost(UnityTransportSettings settings)
         {
             var normalized = settings.Normalize(true);
@@ -74,9 +70,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
             _driver.TryDequeueDisconnected(out connection);
         /// <summary>Completes pending send jobs.</summary>
         public void Flush() => _driver.Flush();
-        /// <summary>Captures current counters.</summary>
         public UnityTransportDiagnostics CaptureDiagnostics() => _driver.CaptureDiagnostics();
-        /// <inheritdoc />
         public void Dispose() => _driver.Dispose();
     }
 
