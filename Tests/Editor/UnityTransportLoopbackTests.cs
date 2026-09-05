@@ -697,6 +697,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(server.TryDequeueDisconnected(out _), Is.False);
             WaitUntil(() =>
             {
+                server.Update();
                 client.Update();
                 return !client.Connected;
             }, "Overloaded peer did not observe the local disconnect.");
