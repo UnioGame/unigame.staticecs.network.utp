@@ -301,6 +301,14 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                     {
                         _dropped++;
                         _receiveQueueOverflows++;
+                        if (reliable)
+                        {
+                            endpoint.IsConnected = false;
+                            if (endpoint.NativeConnection.IsCreated)
+                                endpoint.NativeConnection.Disconnect(_driver);
+                            _removedConnections[removedCount++] = pair.Key;
+                            break;
+                        }
                         continue;
                     }
                     var packet = _pool.Rent(reader.Length);

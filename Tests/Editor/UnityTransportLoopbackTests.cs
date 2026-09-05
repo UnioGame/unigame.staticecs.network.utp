@@ -661,9 +661,9 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(server.TryDequeueDisconnected(out _), Is.False);
         }
 
-        /// <summary>Verifies receive queues remain bounded and overflow is diagnosed.</summary>
+        /// <summary>Verifies reliable receive overflow disconnects the overloaded peer and releases its leases.</summary>
         [Test]
-        public void ReceiveQueueOverflowDropsExcessPacket()
+        public void ReliableReceiveQueueOverflowDisconnectsPeerAndReleasesLeases()
         {
             var settings = Settings(ReservePort());
             settings.ReceiveQueueCapacity = 1;
@@ -681,14 +681,131 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             {
                 client.Update();
                 server.Update();
-                return server.CaptureDiagnostics().DroppedPackets > 0;
+                var diagnostics = server.CaptureDiagnostics();
+                return diagnostics.ReceiveQueueOverflows > 0 &&
+                    diagnostics.Connections == 0;
             }, "Receive queue did not report overflow.");
 
-            Assert.That(server.CaptureDiagnostics().QueuedPackets, Is.EqualTo(1));
-            Assert.That(server.CaptureDiagnostics().ReceiveQueueOverflows, Is.GreaterThanOrEqualTo(1));
+            var diagnostics = server.CaptureDiagnostics();
+            Assert.That(diagnostics.QueuedPackets, Is.Zero);
+            Assert.That(diagnostics.ReceiveQueueOverflows, Is.EqualTo(1));
+            Assert.That(diagnostics.OutstandingLeases, Is.Zero);
+            Assert.That(accepted.TryReceive(out _), Is.False);
+            Assert.That(server.TryDequeueDisconnected(out _), Is.False);
+            WaitUntil(() =>
+            {
+                client.Update();
+                return !client.Connected;
+            }, "Overloaded peer did not observe the local disconnect.");
+            Assert.That(server.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+            Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+        }
+
+        /// <summary>Verifies reliable overflow isolates one peer, preserves another, and permits a new epoch.</summary>
+        [Test]
+        public void ReliableReceiveOverflowIsolatesPeerAndAllowsReconnect()
+        {
+            var settings = Settings(ReservePort());
+            settings.MaximumConnections = 2;
+            settings.ReceiveQueueCapacity = 1;
+            using var server = new UnityTransportServerHost(settings);
+            using var firstClient = new UnityTransportClientHost(settings);
+            using var secondClient = new UnityTransportClientHost(settings);
+            var firstAccepted = WaitForConnection(server, firstClient);
+            var secondAccepted = WaitForConnection(server, secondClient);
+            using var pool = new NetworkBufferPool(4096);
+
+            Assert.That(firstClient.Endpoint.TrySend(Packet(pool,
+                PacketFlags.ReliableOrdered, PacketHeader.Size)), Is.True);
+            Assert.That(firstClient.Endpoint.TrySend(Packet(pool,
+                PacketFlags.ReliableOrdered, PacketHeader.Size)), Is.True);
+            Assert.That(secondClient.Endpoint.TrySend(Packet(pool,
+                PacketFlags.ReliableOrdered, PacketHeader.Size)), Is.True);
+            firstClient.Flush();
+            secondClient.Flush();
+
+            WaitUntil(() =>
+            {
+                firstClient.Update();
+                secondClient.Update();
+                server.Update();
+                var diagnostics = server.CaptureDiagnostics();
+                return diagnostics.ReceiveQueueOverflows > 0 &&
+                    diagnostics.Connections == 1 && !firstClient.Connected &&
+                    secondClient.Connected;
+            }, "Reliable overflow did not isolate the overloaded peer.");
+
+            var diagnostics = server.CaptureDiagnostics();
+            Assert.That(diagnostics.ReceiveQueueOverflows, Is.EqualTo(1));
+            Assert.That(diagnostics.QueuedPackets, Is.EqualTo(1));
+            Assert.That(firstAccepted.TryReceive(out _), Is.False);
+            Assert.That(secondAccepted.TryReceive(out var secondPacket), Is.True);
+            secondPacket.Dispose();
+            Assert.That(server.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+            Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+
+            using var reconnectedClient = new UnityTransportClientHost(settings);
+            var reconnected = WaitForConnection(server, reconnectedClient);
+            Assert.That(reconnected.Connection, Is.Not.EqualTo(firstAccepted.Connection));
+
+            var header = new PacketHeader
+            {
+                Kind = PacketKind.Ping,
+                Flags = PacketFlags.ReliableOrdered,
+                SessionEpoch = 2,
+                PacketSequence = 1,
+            };
+            Assert.That(NetworkPacket.TryEncode(pool, header,
+                ReadOnlySpan<byte>.Empty, out var reconnectPacket), Is.True);
+            Assert.That(reconnectedClient.Endpoint.TrySend(reconnectPacket), Is.True);
+            reconnectedClient.Flush();
+            var received = WaitForPacket(server, reconnectedClient, reconnected);
+            try
+            {
+                Assert.That(NetworkPacket.TryDecode(received, out var receivedHeader,
+                    out _), Is.True);
+                Assert.That(receivedHeader.SessionEpoch, Is.EqualTo(2));
+            }
+            finally
+            {
+                received.Dispose();
+            }
+            Assert.That(server.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+            Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+        }
+
+        /// <summary>Verifies unreliable receive overflow drops excess data without disconnecting its peer.</summary>
+        [Test]
+        public void UnreliableReceiveQueueOverflowDropsPacketWithoutDisconnect()
+        {
+            var settings = Settings(ReservePort());
+            settings.ReceiveQueueCapacity = 1;
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            var accepted = WaitForConnection(server, client);
+            using var pool = new NetworkBufferPool(4096);
+
+            Assert.That(client.Endpoint.TrySend(Packet(pool,
+                PacketFlags.UnreliableSequenced, PacketHeader.Size)), Is.True);
+            Assert.That(client.Endpoint.TrySend(Packet(pool,
+                PacketFlags.UnreliableSequenced, PacketHeader.Size)), Is.True);
+            client.Flush();
+            WaitUntil(() =>
+            {
+                client.Update();
+                server.Update();
+                return server.CaptureDiagnostics().ReceiveQueueOverflows > 0;
+            }, "Unreliable receive queue did not report overflow.");
+
+            var diagnostics = server.CaptureDiagnostics();
+            Assert.That(diagnostics.Connections, Is.EqualTo(1));
+            Assert.That(diagnostics.QueuedPackets, Is.EqualTo(1));
+            Assert.That(diagnostics.ReceiveQueueOverflows, Is.EqualTo(1));
             Assert.That(accepted.TryReceive(out var received), Is.True);
             received.Dispose();
+            Assert.That(client.Connected, Is.True);
             Assert.That(server.CaptureDiagnostics().OutstandingLeases, Is.Zero);
+            Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
         }
 
         /// <summary>Verifies raw invalid transport data increments malformed and dropped counters.</summary>
