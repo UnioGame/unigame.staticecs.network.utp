@@ -691,12 +691,17 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(diagnostics.ReceiveQueueOverflows, Is.EqualTo(1));
             Assert.That(diagnostics.OutstandingLeases, Is.Zero);
             Assert.That(accepted.TryReceive(out _), Is.False);
+            Assert.That(diagnostics.Disconnects, Is.EqualTo(1));
+            Assert.That(server.TryDequeueDisconnected(out var disconnected), Is.True);
+            Assert.That(disconnected, Is.EqualTo(accepted.Connection));
             Assert.That(server.TryDequeueDisconnected(out _), Is.False);
             WaitUntil(() =>
             {
                 client.Update();
                 return !client.Connected;
             }, "Overloaded peer did not observe the local disconnect.");
+            server.Update();
+            Assert.That(server.TryDequeueDisconnected(out _), Is.False);
             Assert.That(server.CaptureDiagnostics().OutstandingLeases, Is.Zero);
             Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
         }
@@ -739,8 +744,14 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(diagnostics.ReceiveQueueOverflows, Is.EqualTo(1));
             Assert.That(diagnostics.QueuedPackets, Is.EqualTo(1));
             Assert.That(firstAccepted.TryReceive(out _), Is.False);
+            Assert.That(diagnostics.Disconnects, Is.EqualTo(1));
+            Assert.That(server.TryDequeueDisconnected(out var disconnected), Is.True);
+            Assert.That(disconnected, Is.EqualTo(firstAccepted.Connection));
+            Assert.That(server.TryDequeueDisconnected(out _), Is.False);
             Assert.That(secondAccepted.TryReceive(out var secondPacket), Is.True);
             secondPacket.Dispose();
+            server.Update();
+            Assert.That(server.TryDequeueDisconnected(out _), Is.False);
             Assert.That(server.CaptureDiagnostics().OutstandingLeases, Is.Zero);
             Assert.That(pool.CaptureDiagnostics().OutstandingLeases, Is.Zero);
 
@@ -801,6 +812,8 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(diagnostics.Connections, Is.EqualTo(1));
             Assert.That(diagnostics.QueuedPackets, Is.EqualTo(1));
             Assert.That(diagnostics.ReceiveQueueOverflows, Is.EqualTo(1));
+            Assert.That(diagnostics.Disconnects, Is.Zero);
+            Assert.That(server.TryDequeueDisconnected(out _), Is.False);
             Assert.That(accepted.TryReceive(out var received), Is.True);
             received.Dispose();
             Assert.That(client.Connected, Is.True);

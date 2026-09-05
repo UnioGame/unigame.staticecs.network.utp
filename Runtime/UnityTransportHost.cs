@@ -262,12 +262,6 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                     if (type == NetworkEvent.Type.Disconnect)
                     {
                         endpoint.IsConnected = false;
-                        _disconnects++;
-                        // Preserve FIFO entries when the defensive bound is exceeded; drop the newest event.
-                        if (_disconnected.Count < _settings.MaximumConnections)
-                            _disconnected.Enqueue(endpoint.Connection);
-                        else
-                            _dropped++;
                         _removedConnections[removedCount++] = pair.Key;
                         break;
                     }
@@ -347,7 +341,15 @@ namespace UniGame.StaticEcs.Network.UnityTransport
                 var id = _removedConnections[index];
                 _removedConnections[index] = default;
                 if (_connections.Remove(id, out var endpoint))
+                {
                     endpoint.DisposeFromDriver();
+                    _disconnects++;
+                    // Preserve FIFO entries when the defensive bound is exceeded; drop the newest event.
+                    if (_disconnected.Count < _settings.MaximumConnections)
+                        _disconnected.Enqueue(endpoint.Connection);
+                    else
+                        _dropped++;
+                }
             }
 
             foreach (var endpoint in _connections.Values)
