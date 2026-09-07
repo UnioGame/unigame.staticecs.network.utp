@@ -9,6 +9,7 @@ namespace UniGame.StaticEcs.Network.UnityTransport
     public sealed class UnityTransportClientHost : IDisposable
     {
         private readonly UnityTransportDriver _driver;
+        private bool _disposed;
 
         public UnityTransportClientHost(UnityTransportSettings settings)
         {
@@ -36,7 +37,22 @@ namespace UniGame.StaticEcs.Network.UnityTransport
         /// <summary>Completes pending send jobs.</summary>
         public void Flush() => _driver.Flush();
         public UnityTransportDiagnostics CaptureDiagnostics() => _driver.CaptureDiagnostics();
-        public void Dispose() => _driver.Dispose();
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            try
+            {
+                Endpoint.Dispose();
+                _driver.Flush();
+                _driver.Update();
+            }
+            finally
+            {
+                _driver.Dispose();
+            }
+        }
     }
 
     /// <summary>Owns one listening Unity Transport driver and accepted exact-packet endpoints.</summary>

@@ -588,6 +588,72 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(server.TryDequeueDisconnected(out _), Is.False);
         }
 
+        /// <summary>Verifies client host disposal sends one native disconnect immediately.</summary>
+        [Test]
+        public void ClientHostDisposePublishesExactConnectionOnce()
+        {
+            var settings = Settings(ReservePort());
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            var accepted = WaitForConnection(server, client);
+
+            client.Dispose();
+            Assert.DoesNotThrow(client.Dispose);
+            WaitUntil(() =>
+            {
+                server.Update();
+                return server.CaptureDiagnostics().Connections == 0;
+            }, "Server did not observe client host disposal.");
+
+            Assert.That(server.TryDequeueDisconnected(out var disconnected), Is.True);
+            Assert.That(disconnected, Is.EqualTo(accepted.Connection));
+            Assert.That(server.TryDequeueDisconnected(out _), Is.False);
+        }
+
+        /// <summary>Verifies one stalled reliable peer does not starve a newly accepted peer.</summary>
+        [Test]
+        public void StalledReliablePeerDoesNotStarveNewPeer()
+        {
+            const int reliableWindow = 64;
+            var settings = Settings(ReservePort());
+            settings.MaximumConnections = 2;
+            using var server = new UnityTransportServerHost(settings);
+            using var stalledClient = new UnityTransportClientHost(settings);
+            var stalled = WaitForConnection(server, stalledClient);
+            using var pool = new NetworkBufferPool(256 * 1024);
+
+            for (var index = 0; index <= reliableWindow; index++)
+                Assert.That(stalled.TrySend(Packet(pool,
+                    PacketFlags.ReliableOrdered, PacketHeader.Size)), Is.True);
+            server.Flush();
+
+            using var activeClient = new UnityTransportClientHost(settings);
+            var active = WaitForConnection(server, activeClient);
+            var kinds = new[] { PacketKind.Ready, PacketKind.SnapshotChunk, PacketKind.Pong };
+            foreach (var kind in kinds)
+            {
+                var header = new PacketHeader
+                {
+                    Kind = kind,
+                    Flags = PacketFlags.ReliableOrdered,
+                };
+                Assert.That(NetworkPacket.TryEncode(pool, header,
+                    ReadOnlySpan<byte>.Empty, out var packet), Is.True);
+                Assert.That(active.TrySend(packet), Is.True);
+            }
+            server.Flush();
+
+            foreach (var expected in kinds)
+            {
+                using var packet = WaitForPacket(server, activeClient,
+                    activeClient.Endpoint);
+                Assert.That(NetworkPacket.TryDecode(packet, out var header, out _),
+                    Is.True);
+                Assert.That(header.Kind, Is.EqualTo(expected));
+            }
+            Assert.That(activeClient.Connected, Is.True);
+        }
+
         /// <summary>Verifies local server endpoint disposal does not publish a disconnect notification.</summary>
         [Test]
         public void LocalServerEndpointDisposeDoesNotPublishDisconnect()

@@ -9,6 +9,7 @@ Unity Transport adapter for the complete-packet `INetworkTransport` contract.
 - Uses bounded receive queues and a fixed-capacity reliable FIFO of existing leases under UTP backpressure.
 - Retries reliable packets in FIFO order only after a later driver update processes ACKs.
 - Defers reliable receive-overflow removal until the driver update completes, isolating one connection and emitting one disconnect notification; unreliable overflow is dropped.
+- Client host disposal sends and flushes a native disconnect before releasing the driver.
 - `TrySend` consumes its packet lease on every result; `true` means accepted by the local send or queue path, not delivered remotely.
 - Reports channel traffic, failures, queue depth/high-water, overflow, disconnect, and lease diagnostics.
 
