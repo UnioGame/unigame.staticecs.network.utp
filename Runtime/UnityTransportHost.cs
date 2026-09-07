@@ -92,7 +92,9 @@ namespace UniGame.StaticEcs.Network.UnityTransport
 
     internal sealed class UnityTransportDriver : IDisposable
     {
-        private const int NetworkMessageSize = 1472;
+        // Preserve the 1400-byte unreliable payload while leaving WAN encapsulation
+        // headroom below the 1500-byte Ethernet MTU.
+        private const int NetworkMessageSize = 1412;
         private const int ReliableWindowSize = 64;
         // 128 default connections multiplied by one reliable window per connection.
         private const int ServerSendQueueCapacity = 8192;
