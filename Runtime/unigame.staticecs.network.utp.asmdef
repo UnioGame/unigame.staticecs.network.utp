@@ -10,6 +10,6 @@
   "autoReferenced": true,
   "overrideReferences": false,
   "precompiledReferences": [],
-  "allowUnsafeCode": false,
+  "allowUnsafeCode": true,
   "noEngineReferences": false
 }

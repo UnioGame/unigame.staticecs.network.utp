@@ -509,6 +509,96 @@ namespace UniGame.StaticEcs.Network.UnityTransport.Tests
             Assert.That(allocated, Is.Zero);
         }
 
+        /// <summary>
+        /// Verifies a reliable window above the fixed-mask boundary (64) still transfers a full
+        /// fragmented packet: at window sizes above 64, UTP switches from its fixed 8-byte ack mask
+        /// to a variable one (windowSize / 8 bytes), which changes the header overhead the
+        /// fragmentation stage's payload capacity must reserve.
+        /// </summary>
+        [Test]
+        public void ReliableWindowAboveSixtyFourTransfersFragmentedPayload()
+        {
+            var settings = Settings(ReservePort());
+            settings.ReliableWindowSize = 128;
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            var accepted = WaitForConnection(server, client);
+            using var pool = new NetworkBufferPool(256 * 1024);
+
+            var reliable = Packet(pool, PacketFlags.ReliableOrdered,
+                UnityTransportSettings.MaximumReliableBytes);
+            Assert.That(client.Endpoint.TrySend(reliable), Is.True);
+            client.Flush();
+            using var received = WaitForPacket(server, client, accepted);
+            Assert.That(received.Length, Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
+            Assert.That(server.CaptureDiagnostics().ReliableReceivedBytes,
+                Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
+        }
+
+        /// <summary>
+        /// Verifies HasPendingReliablePackets reflects only this adapter's own managed FIFO:
+        /// packets handed to native UTP but not yet acknowledged do not set it.
+        /// </summary>
+        [Test]
+        public void HasPendingReliablePacketsReflectsManagedFifoOccupancyOnly()
+        {
+            const int reliableWindow = 64;
+            var settings = Settings(ReservePort());
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            WaitForConnection(server, client);
+            using var pool = new NetworkBufferPool(256 * 1024);
+
+            var state = (INetworkReliableSendState)client.Endpoint;
+            Assert.That(state.HasPendingReliablePackets, Is.False);
+
+            for (var index = 0; index < reliableWindow; index++)
+                Assert.That(client.Endpoint.TrySend(Packet(pool,
+                    PacketFlags.ReliableOrdered, PacketHeader.Size)), Is.True);
+            Assert.That(state.HasPendingReliablePackets, Is.False);
+
+            Assert.That(client.Endpoint.TrySend(Packet(pool,
+                PacketFlags.ReliableOrdered, PacketHeader.Size)), Is.True);
+            Assert.That(state.HasPendingReliablePackets, Is.True);
+        }
+
+        /// <summary>
+        /// Verifies a configured reliable byte budget bounds queued bytes independently of the
+        /// packet-count FIFO limit, and that CanAcceptReliablePacket predicts the rejection.
+        /// </summary>
+        [Test]
+        public void ReliableSendBytesCapacityBoundsQueuedBytesIndependentlyOfPacketCount()
+        {
+            const int reliableWindow = 64;
+            var settings = Settings(ReservePort());
+            settings.ReliableSendBytesCapacity = UnityTransportSettings.MaximumReliableBytes;
+            using var server = new UnityTransportServerHost(settings);
+            using var client = new UnityTransportClientHost(settings);
+            WaitForConnection(server, client);
+            using var pool = new NetworkBufferPool(256 * 1024);
+
+            for (var index = 0; index < reliableWindow; index++)
+                Assert.That(client.Endpoint.TrySend(Packet(pool,
+                    PacketFlags.ReliableOrdered, PacketHeader.Size)), Is.True);
+
+            var first = Packet(pool, PacketFlags.ReliableOrdered,
+                UnityTransportSettings.MaximumReliableBytes);
+            Assert.That(client.Endpoint.TrySend(first), Is.True);
+            Assert.That(client.CaptureDiagnostics().PendingReliableBytes,
+                Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
+
+            var preflight = (INetworkReliableSendPreflight)client.Endpoint;
+            Assert.That(preflight.CanAcceptReliablePacket(PacketHeader.Size + 1), Is.False);
+
+            var second = Packet(pool, PacketFlags.ReliableOrdered, PacketHeader.Size + 1);
+            Assert.That(client.Endpoint.TrySend(second), Is.False);
+            Assert.That(second.Length, Is.Zero);
+            var diagnostics = client.CaptureDiagnostics();
+            Assert.That(diagnostics.ReliableSendQueueOverflows, Is.EqualTo(1));
+            Assert.That(diagnostics.PendingReliableBytes,
+                Is.EqualTo(UnityTransportSettings.MaximumReliableBytes));
+        }
+
         /// <summary>Verifies the server rejects connections beyond its configured bound.</summary>
         [Test]
         public void ServerEnforcesMaximumConnections()
