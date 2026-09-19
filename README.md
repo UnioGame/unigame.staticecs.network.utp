@@ -1,37 +1,55 @@
 # Static ECS Network Unity Transport
 
-Unity Transport adapter for the complete-packet `INetworkTransport` contract.
+Unity Transport adapter for the complete-packet `INetworkTransport` contract. It is an
+alternative to the LiteNetLib transport.
 
-## Capabilities
+## Send and receive
 
-- Exposes reliable and unreliable complete-packet capabilities, including `PacketHeader`.
-- Copies each received native packet directly once into a pooled lease.
-- Uses bounded receive queues and a fixed-capacity reliable FIFO of existing leases under UTP backpressure.
-- Retries reliable packets in FIFO order only after a later driver update processes ACKs.
-- Defers reliable receive-overflow removal until the driver update completes, isolating one connection and emitting one disconnect notification; unreliable overflow is dropped.
-- Client host disposal sends and flushes a native disconnect before releasing the driver.
-- `TrySend` consumes its packet lease on every result; `true` means accepted by the local send or queue path, not delivered remotely.
-- Reports channel traffic, failures, queue depth/high-water, overflow, disconnect, and lease diagnostics.
+```mermaid
+flowchart LR
+    P[Protocol TrySend] --> W[WriteBytesUnsafe<br/>one block copy]
+    W --> D{Driver accepts?}
+    D -- yes --> N[UTP reliable / unreliable pipeline]
+    D -- queue full --> Q[Reliable FIFO<br/>bounded by packets and bytes]
+    Q -- after driver update --> D
+    N --> R[Receive: one copy into a pooled lease] --> Q2[Bounded receive queue]
+```
+
+- `TrySend` consumes the lease on every result; `true` means accepted locally, not delivered.
+- Reliable packets that the driver rejects wait in a FIFO and are retried in order after the
+  next driver update.
+- Reliable receive overflow disconnects only that connection; unreliable overflow drops the packet.
+- The reliable preflight (`CanAcceptReliablePacket`) and pending state reflect only the adapter
+  FIFO. Raw UTP has no per-packet delivery callback, so bytes already handed to UTP are not tracked.
+
+## Settings
+
+| `UnityTransportSettings` | Default | Meaning |
+|---|---|---|
+| `ReliableWindowSize` | 64 (max 2040; above 64 must be a multiple of 8) | Reliable in-flight window; the fragmentation header size is derived from it |
+| `ServerSendQueueCapacity` | `max(512, 2 × connections × window)` | Native send and receive queue size for a listener |
+| `ReliableSendBytesCapacity` | 256 KiB | Per-connection byte limit of the reliable FIFO |
+| `ReceiveQueueCapacity` | 256 | Per-connection receive queue in packets |
+| `MaximumConnections` | 128 | Accepted server connections |
+
+- Default port: `7777`.
+- Largest unreliable complete packet: 1400 bytes; largest reliable complete packet: 64 KiB.
+
+## Diagnostics
+
+Channel traffic, failures, queue depth and high-water mark, overflows, disconnects, leases,
+plus UTP driver statistics (Rx/Tx bytes and packets, queue usage) and per-connection reliable
+statistics (resent, dropped, duplicated, out of order, latency).
 
 ## Usage
 
 ```csharp
 var settings = UnityTransportSettings.Default;
 using var client = new UnityTransportClientHost(settings);
-client.Update();
-client.Flush();
+client.Update(); // before protocol receive
+client.Flush();  // after protocol send
 ```
 
-Call `Update` before protocol receive and `Flush` after protocol send. Server endpoints
-from `UnityTransportServerHost.TryAccept` are passed to the transport-neutral server;
-drain disconnect notifications after each update.
-
-## Configuration
-
-- Default port: `7777`.
-- Maximum unreliable complete packet: `1400` bytes.
-- Maximum reliable complete packet: `64 KiB`.
-- Snapshot body capacity is `MaxReliablePayloadBytes - 113` bytes.
-- Queue capacities are bounded; snapshot chunking derives from protocol and transport limits and has no config knob.
-- A pending snapshot tick blocks enqueue of a different snapshot tick until the prior reliable FIFO drains.
-- See [runtime config schema v2](../../../docs/guides/network-client-server-runtime-config.md) for separated roles.
+Server endpoints from `UnityTransportServerHost.TryAccept` go to the transport-neutral
+server; drain disconnect notifications after each update. Client disposal sends and flushes
+a native disconnect.
